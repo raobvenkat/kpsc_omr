@@ -689,232 +689,375 @@ def process_single_sheet_for_demo(img_path):
 class VisualOMRViewerDemo:
     def __init__(self, root):
         self.root = root
-        self.root.title("OMR Processing Visual Demo")
-        self.root.geometry("1500x850")
-        self.root.minsize(1000, 700)
-        self.root.configure(bg="#1e1e24") # Premium Dark Mode Background
-        
-        # Configure Styles
-        self.style = ttk.Style()
-        self.style.theme_use("clam")
-        
-        # Dark style definitions
-        self.style.configure(".", background="#1e1e24", foreground="#ffffff", fieldbackground="#2b2b36")
-        self.style.configure("TLabel", background="#1e1e24", foreground="#ffffff", font=("Segoe UI", 10))
-        self.style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"), foreground="#00e676", background="#1e1e24")
-        self.style.configure("TButton", font=("Segoe UI", 10, "bold"), background="#00c853", foreground="#ffffff", borderwidth=0, focuscolor="none")
-        self.style.map("TButton", background=[("active", "#00e676")])
-        
-        # Style Comboboxes for clear visibility (no white-on-grey)
-        self.style.configure("TCombobox", background="#2b2b36", foreground="#ffffff", fieldbackground="#2b2b36")
-        self.style.map("TCombobox", fieldbackground=[("readonly", "#2b2b36")], foreground=[("readonly", "#ffffff")])
-        
-        # Style Entry fields for clear contrast
-        self.style.configure("TEntry", fieldbackground="#2b2b36", foreground="#ffffff", insertcolor="#ffffff")
-        self.style.map("TEntry", fieldbackground=[("readonly", "#1c1c22")], foreground=[("readonly", "#888888")])
-        
-        # Configure Dropdown Listbox popup style globally
-        self.root.option_add("*TCombobox*Listbox.background", "#2b2b36")
-        self.root.option_add("*TCombobox*Listbox.foreground", "#ffffff")
-        self.root.option_add("*TCombobox*Listbox.selectBackground", "#00c853")
-        self.root.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
-        self.root.option_add("*TCombobox*Listbox.font", ("Segoe UI", 10))
-        
-        # No folder selected on startup - user must browse to load images
-        self.omr_dir = None
+        self.root.title("OMR ICR OCR Extraction Engine")
+
+        # Responsive: fill 92% of screen, centered
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        win_w = int(sw * 0.92)
+        win_h = int(sh * 0.90)
+        self.root.geometry(f"{win_w}x{win_h}+{(sw-win_w)//2}+{(sh-win_h)//2}")
+        self.root.minsize(1024, 600)
+        self.root.configure(bg="#1a1a22")
+
+        # Scale factor relative to 1920-wide display
+        sf = max(0.7, min(1.4, sw / 1920))
+        self._fs = lambda n: max(7, int(n * sf))   # font size
+        self._px = lambda n: max(2, int(n * sf))   # pixel gap
+
+        # Colour palette
+        self._BG      = "#1a1a22"
+        self._PANEL   = "#24242f"
+        self._ACCENT  = "#00c853"
+        self._ACCH    = "#00e676"
+        self._FG      = "#e8e8ee"
+        self._FGD     = "#888899"
+        self._ENTRY   = "#2a2a38"
+
+        self._setup_styles()
+
+        self.omr_dir             = None
         self.last_loaded_filename = None
-        self.last_loaded_folder = None
-        self.image_paths = []
-        self.filenames = []
-        
-        # Build layout
+        self.last_loaded_folder  = None
+        self.image_paths         = []
+        self.filenames           = []
+        self.current_omr_res     = None
+
         self.build_ui()
+    def _setup_styles(self):
+        fs = self._fs; px = self._px
+        BG = self._BG; P = self._PANEL; AC = self._ACCENT
+        FG = self._FG; FGD = self._FGD; EN = self._ENTRY
+
+        s = ttk.Style()
+        s.theme_use("clam")
+        self.style = s
+
+        s.configure(".", background=BG, foreground=FG,
+                    fieldbackground=EN, font=("Segoe UI", fs(9)))
+        s.configure("TLabel",  background=BG,  foreground=FG,  font=("Segoe UI", fs(9)))
+        s.configure("Pan.TLabel", background=P, foreground=FG,  font=("Segoe UI", fs(9)))
+        s.configure("Dim.TLabel", background=P, foreground=FGD, font=("Segoe UI", fs(8)))
+        s.configure("Title.TLabel", background=P, foreground=AC,
+                    font=("Segoe UI", fs(11), "bold"))
+        s.configure("TButton", background=AC, foreground="#fff",
+                    font=("Segoe UI", fs(8), "bold"),
+                    borderwidth=0, focuscolor="none",
+                    padding=(px(6), px(3)))
+        s.map("TButton", background=[("active", self._ACCH), ("disabled", "#44445a")])
+        s.configure("TEntry", fieldbackground=EN, foreground=FG,
+                    insertcolor=FG, font=("Consolas", fs(9)))
+        s.map("TEntry",
+              fieldbackground=[("readonly", "#1e1e2a")],
+              foreground=[("readonly", FGD)])
+        s.configure("TCombobox", fieldbackground=EN, background=EN, foreground=FG)
+        s.map("TCombobox",
+              fieldbackground=[("readonly", EN)],
+              foreground=[("readonly", FG)])
+        s.configure("Thin.Horizontal.TProgressbar",
+                    troughcolor=P, background=AC, thickness=px(8))
+
+        self.root.option_add("*TCombobox*Listbox.background", EN)
+        self.root.option_add("*TCombobox*Listbox.foreground", FG)
+        self.root.option_add("*TCombobox*Listbox.selectBackground", AC)
+        self.root.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
+        self.root.option_add("*TCombobox*Listbox.font", ("Segoe UI", fs(9)))
             
+    # ── helpers ────────────────────────────────────────────────────────────
+    def _sep(self, parent, pady=2):
+        tk.Frame(parent, bg="#33334a", height=1).pack(
+            fill="x", padx=self._px(6), pady=pady)
+
+    def _field(self, parent, label, font_name="Consolas",
+               font_size=9, bold=False, readonly=False):
+        px = self._px
+        tk.Label(parent, text=label,
+                 bg=self._PANEL, fg=self._FG,
+                 font=("Segoe UI", self._fs(8), "bold"),
+                 anchor="w").pack(fill="x", padx=px(8), pady=(px(3), 0))
+        e = ttk.Entry(parent,
+                      font=(font_name, self._fs(font_size),
+                            "bold" if bold else "normal"))
+        if readonly:
+            e.config(state="readonly")
+        e.pack(fill="x", padx=px(8), pady=(1, px(2)))
+        return e
+
     def build_ui(self):
-        # 1. Top Panel (Control Panel)
-        top_frame = tk.Frame(self.root, bg="#2b2b36", height=70, bd=0)
-        top_frame.pack(fill="x", side="top", padx=0, pady=0)
-        top_frame.pack_propagate(False)
-        
-        lbl = ttk.Label(top_frame, text="Select OMR Image:", font=("Segoe UI", 11, "bold"), background="#2b2b36")
-        lbl.pack(side="left", padx=(20, 5))
-        
-        self.prev_btn = ttk.Button(top_frame, text="<- Prev", command=lambda: self.navigate_sheet(-1), style="TButton", width=8, state="disabled")
-        self.prev_btn.pack(side="left", padx=2)
-        
-        self.file_combo = ttk.Combobox(top_frame, values=self.filenames, state="readonly", width=25, font=("Segoe UI", 10))
-        self.file_combo.pack(side="left", padx=5)
-        self.file_combo.bind("<<ComboboxSelected>>", lambda e: self.process_selected_sheet())
-        
-        self.next_btn = ttk.Button(top_frame, text="Next ->", command=lambda: self.navigate_sheet(1), style="TButton", width=8, state="disabled")
-        self.next_btn.pack(side="left", padx=2)
-        
-        self.All_btn = ttk.Button(top_frame, text="Process All", command=self.process_all_sheets_to_mssql, style="TButton",width=12)
-        self.All_btn.pack(side="left", padx=2)
+        px = self._px; fs = self._fs
+        BG = self._BG; P = self._PANEL; AC = self._ACCENT; FG = self._FG; FGD = self._FGD
 
-        browse_btn = ttk.Button(top_frame, text="Select Folder...", command=self.browse_folder, style="TButton")
-        browse_btn.pack(side="left", padx=10)
-        
-        # Run Processing button removed as Next/Prev and selection handles processing automatically
-        
-        self.status_lbl = ttk.Label(top_frame, text="Ready", font=("Segoe UI", 10, "italic"), background="#2b2b36", foreground="#ffeb3b")
-        self.status_lbl.pack(side="left", padx=20)
-        
-        # Progress bar
-        
-        self.progress = ttk.Progressbar(top_frame, orient="horizontal", length=300, mode="determinate")
-        self.progress.pack(side="left", padx=10)
+        # ── HEADER ROW ─────────────────────────────────────────────────────
+        header = tk.Frame(self.root, bg=P, height=px(38))
+        header.pack(fill="x", side="top")
+        header.pack_propagate(False)
 
+        tk.Label(header,
+                 text="OMR ICR OCR Extraction Engine",
+                 bg=P, fg=AC,
+                 font=("Segoe UI", fs(15), "bold"),
+                 anchor="center").pack(fill="both", expand=True)
 
-        title_lbl = ttk.Label(top_frame, text="OMR EXTRACTION ENGINE", style="Header.TLabel", background="#2b2b36")
-        title_lbl.pack(side="right", padx=30)
-        
-        # 2. Main content split pane (Left: Original Image, Center: Crop Images, Right: Data)
-        content_frame = tk.Frame(self.root, bg="#1e1e24")
-        content_frame.pack(fill="both", expand=True, padx=15, pady=15)
-        
-        # Original Scanned Sheet Panel (Far Left)
-        self.full_omr_frame = tk.LabelFrame(content_frame, text="Original Scanned Sheet", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, width=550)
-        self.full_omr_frame.pack(fill="both", side="left", padx=(0, 10))
-        self.full_omr_frame.pack_propagate(False)
-        self.full_omr_lbl = tk.Label(self.full_omr_frame, bg="#2b2b36")
-        self.full_omr_lbl.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Center Panel (Images Column - previously Left Panel)
-        self.left_frame = tk.Frame(content_frame, bg="#1e1e24")
-        self.left_frame.pack(fill="both", side="left", expand=True, padx=(0, 10))
-        
-        # Bubble Grid frame
-        self.grid_labelframe = tk.LabelFrame(self.left_frame, text="Bubble Grid Extraction Map", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1)
-        self.grid_labelframe.pack(fill="both", expand=True, pady=(0, 10))
-        self.grid_canvas_lbl = tk.Label(self.grid_labelframe, bg="#2b2b36")
-        self.grid_canvas_lbl.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Handwritten Box frame
-        self.hw_labelframe = tk.LabelFrame(self.left_frame, text="Handwritten Box Crop (MNIST Target)", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, height=120)
-        self.hw_labelframe.pack(fill="x", pady=(0, 10))
-        self.hw_labelframe.pack_propagate(False)
-        self.hw_crop_lbl = tk.Label(self.hw_labelframe, bg="#2b2b36")
-        self.hw_crop_lbl.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Signatures frame
-        self.sig_labelframe = tk.LabelFrame(self.left_frame, text="Cropped Signature Regions", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, height=140)
-        self.sig_labelframe.pack(fill="x")
-        self.sig_labelframe.pack_propagate(False)
-        
-        sig_split = tk.Frame(self.sig_labelframe, bg="#2b2b36")
-        sig_split.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        cand_sig_wrapper = tk.LabelFrame(sig_split, text="Candidate Signature", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        cand_sig_wrapper.pack(fill="both", side="left", expand=True, padx=(0, 5))
-        self.cand_sig_lbl = tk.Label(cand_sig_wrapper, bg="#2b2b36")
+        # thin accent underline
+        tk.Frame(self.root, bg=AC, height=2).pack(fill="x", side="top")
+
+        # ── CONTROLS ROW ───────────────────────────────────────────────────
+        top = tk.Frame(self.root, bg="#1e1e2a", height=px(36))
+        top.pack(fill="x", side="top")
+        top.pack_propagate(False)
+
+        ttk.Label(top, text="Image:", style="Pan.TLabel",
+                  font=("Segoe UI", fs(8), "bold")).pack(
+                      side="left", padx=(px(10), px(2)))
+
+        self.prev_btn = ttk.Button(top, text="◀", width=3,
+            command=lambda: self.navigate_sheet(-1), state="disabled")
+        self.prev_btn.pack(side="left", padx=px(2))
+
+        self.file_combo = ttk.Combobox(top, values=[], state="readonly",
+                                       width=50, font=("Segoe UI", fs(8)))
+        self.file_combo.pack(side="left", padx=px(3))
+        self.file_combo.bind("<<ComboboxSelected>>",
+                             lambda e: self.process_selected_sheet())
+
+        self.next_btn = ttk.Button(top, text="▶", width=3,
+            command=lambda: self.navigate_sheet(1), state="disabled")
+        self.next_btn.pack(side="left", padx=px(2))
+
+        self.All_btn = ttk.Button(top, text="⚙ Process All",
+            command=self.process_all_sheets_to_mssql, width=11)
+        self.All_btn.pack(side="left", padx=px(4))
+
+        ttk.Button(top, text="📂 Folder",
+                   command=self.browse_folder).pack(side="left", padx=px(3))
+
+        self.status_lbl = ttk.Label(top, text="Ready",
+            style="Pan.TLabel",
+            font=("Segoe UI", fs(8), "italic"),
+            foreground="#ffeb3b")
+        self.status_lbl.pack(side="left", padx=px(8))
+
+        self.progress = ttk.Progressbar(
+            top, orient="horizontal", length=px(140), mode="determinate",
+            style="Thin.Horizontal.TProgressbar")
+        self.progress.pack(side="left", padx=px(3))
+
+        # thin separator below controls
+        tk.Frame(self.root, bg="#33334a", height=1).pack(fill="x", side="top")
+
+        # ── MAIN 3-COLUMN GRID ─────────────────────────────────────────────
+        content = tk.Frame(self.root, bg=BG)
+        content.pack(fill="both", expand=True,
+                     padx=px(5), pady=px(4))
+        content.columnconfigure(0, weight=28)
+        content.columnconfigure(1, weight=38)
+        content.columnconfigure(2, weight=34)
+        content.rowconfigure(0, weight=1)
+
+        # COL 0 — Original sheet
+        col0 = tk.LabelFrame(content, text=" Original Scanned Sheet ",
+            bg=P, fg=AC,
+            font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
+        col0.grid(row=0, column=0, sticky="nsew", padx=(0, px(4)))
+        self.full_omr_lbl = tk.Label(col0, bg=P)
+        self.full_omr_lbl.pack(fill="both", expand=True,
+                               padx=px(3), pady=px(3))
+
+        # COL 1 — Centre crops
+        col1 = tk.Frame(content, bg=BG)
+        col1.grid(row=0, column=1, sticky="nsew", padx=(0, px(4)))
+        col1.rowconfigure(0, weight=5)
+        col1.rowconfigure(1, weight=2)
+        col1.rowconfigure(2, weight=2)
+        col1.columnconfigure(0, weight=1)
+
+        self.grid_labelframe = tk.LabelFrame(col1,
+            text=" Bubble Grid Extraction Map ",
+            bg=P, fg=AC,
+            font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
+        self.grid_labelframe.grid(row=0, column=0,
+                                  sticky="nsew", pady=(0, px(3)))
+        self.grid_canvas_lbl = tk.Label(self.grid_labelframe, bg=P)
+        self.grid_canvas_lbl.pack(fill="both", expand=True,
+                                  padx=px(3), pady=px(3))
+
+        self.hw_labelframe = tk.LabelFrame(col1,
+            text=" Handwritten Box (MNIST) ",
+            bg=P, fg=AC,
+            font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
+        self.hw_labelframe.grid(row=1, column=0,
+                                sticky="nsew", pady=(0, px(3)))
+        self.hw_crop_lbl = tk.Label(self.hw_labelframe, bg=P)
+        self.hw_crop_lbl.pack(fill="both", expand=True,
+                              padx=px(3), pady=px(3))
+
+        sig_lf = tk.LabelFrame(col1,
+            text=" Signature Regions ",
+            bg=P, fg=AC,
+            font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
+        sig_lf.grid(row=2, column=0, sticky="nsew")
+        sig_lf.columnconfigure(0, weight=1)
+        sig_lf.columnconfigure(1, weight=1)
+        sig_lf.rowconfigure(0, weight=1)
+
+        cand_wrap = tk.LabelFrame(sig_lf, text=" Candidate ",
+            bg=P, fg=FGD, font=("Segoe UI", fs(7)), bd=1)
+        cand_wrap.grid(row=0, column=0, sticky="nsew",
+                       padx=(px(3), px(2)), pady=px(3))
+        self.cand_sig_lbl = tk.Label(cand_wrap, bg=P)
         self.cand_sig_lbl.pack(fill="both", expand=True)
-        
-        inv_sig_wrapper = tk.LabelFrame(sig_split, text="Invigilator Signature", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        inv_sig_wrapper.pack(fill="both", side="left", expand=True)
-        self.inv_sig_lbl = tk.Label(inv_sig_wrapper, bg="#2b2b36")
+
+        inv_wrap = tk.LabelFrame(sig_lf, text=" Invigilator ",
+            bg=P, fg=FGD, font=("Segoe UI", fs(7)), bd=1)
+        inv_wrap.grid(row=0, column=1, sticky="nsew",
+                      padx=(px(2), px(3)), pady=px(3))
+        self.inv_sig_lbl = tk.Label(inv_wrap, bg=P)
         self.inv_sig_lbl.pack(fill="both", expand=True)
-        
-        # Right Panel (Data Results Panel)
-        self.right_frame = tk.LabelFrame(content_frame, text="Extraction & Processing Results", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 11, "bold"), bd=1, width=380)
-        self.right_frame.pack(fill="both", side="right", padx=(10, 0))
-        self.right_frame.pack_propagate(False)
-        
-        
-        tk.Label(self.right_frame, text="Subject Code:", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=15)
 
-        self.edit_subject = ttk.Entry(self.right_frame, font=("Consolas", 12, "bold"))
-        self.edit_subject.pack(fill="x", padx=15, pady=2)
-        
-        tk.Label(self.right_frame, text="Booklet Serial No (BookletSlNo):", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=15)
+        # COL 2 — Results (scrollable)
+        col2_outer = tk.LabelFrame(content,
+            text=" Extraction & Processing Results ",
+            bg=P, fg=AC,
+            font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
+        col2_outer.grid(row=0, column=2, sticky="nsew")
 
-        self.edit_booklet = ttk.Entry(self.right_frame, font=("Consolas", 12, "bold"))
-        self.edit_booklet.pack(fill="x", padx=15, pady=2)
+        col2_canvas = tk.Canvas(col2_outer, bg=P,
+                                highlightthickness=0, bd=0)
+        col2_scroll = ttk.Scrollbar(col2_outer, orient="vertical",
+                                    command=col2_canvas.yview)
+        col2_canvas.configure(yscrollcommand=col2_scroll.set)
+        col2_scroll.pack(side="right", fill="y")
+        col2_canvas.pack(side="left", fill="both", expand=True)
 
-        tk.Label(self.right_frame, text="OCR Confidence (BookletSlNo):", bg="#2b2b36", fg="#aaaaaa", font=("Segoe UI", 9)).pack(anchor="w", padx=15)
-        self.edit_booklet_threshold = ttk.Entry(self.right_frame, font=("Consolas", 10))
-        self.edit_booklet_threshold.config(state="readonly")
-        self.edit_booklet_threshold.pack(fill="x", padx=15, pady=(0, 4))
+        self.right_frame = tk.Frame(col2_canvas, bg=P)
+        _win = col2_canvas.create_window((0, 0),
+                                         window=self.right_frame, anchor="nw")
+
+        col2_canvas.bind("<Configure>",
+            lambda e: col2_canvas.itemconfig(_win, width=e.width))
+        self.right_frame.bind("<Configure>",
+            lambda e: col2_canvas.configure(
+                scrollregion=col2_canvas.bbox("all")))
+        col2_canvas.bind_all("<MouseWheel>",
+            lambda e: col2_canvas.yview_scroll(
+                int(-1*(e.delta/120)), "units"))
 
         self.build_results_panel()
         
     def build_results_panel(self):
+        """Populate the scrollable right panel with all result fields."""
+        px = self._px; fs = self._fs
+        P = self._PANEL; FG = self._FG; FGD = self._FGD
+
         # Metadata
-        self.meta_lbl = tk.Label(self.right_frame, text="File Name: -\nResolution: -\nAvg Saturation: -", justify="left", anchor="w", bg="#2b2b36", fg="#b0bec5", font=("Segoe UI", 9))
-        self.meta_lbl.pack(fill="x", padx=15, pady=10)
-        
-        # Separator line
-        sep1 = tk.Frame(self.right_frame, bg="#3f3f52", height=1)
-        sep1.pack(fill="x", padx=10, pady=5)
-        
-        # Barcode
-        bc_frame = tk.Frame(self.right_frame, bg="#2b2b36")
-        bc_frame.pack(fill="x", padx=15, pady=5)
-        tk.Label(bc_frame, text="Decoded Barcode:", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 10, "bold")).pack(side="left")
-        self.edit_barcode = ttk.Entry(bc_frame, font=("Consolas", 10, "bold"))
-        self.edit_barcode.pack(side="right", fill="x", expand=True, padx=(10, 0))
-        
-        # Separator line
-        sep2 = tk.Frame(self.right_frame, bg="#3f3f52", height=1)
-        sep2.pack(fill="x", padx=10, pady=5)
-        
-        # Bubble Register number
-        bubble_frame = tk.Frame(self.right_frame, bg="#2b2b36")
-        bubble_frame.pack(fill="x", padx=15, pady=5)
-        tk.Label(bubble_frame, text="OMR Bubble Reading:", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-        self.edit_bubble = ttk.Entry(bubble_frame, font=("Consolas", 14, "bold"))
-        self.edit_bubble.pack(fill="x", pady=(2, 0))
-        
-        # Handwritten Register number
-        hw_frame = tk.Frame(self.right_frame, bg="#2b2b36")
-        hw_frame.pack(fill="x", padx=15, pady=5)
-        tk.Label(hw_frame, text="Handwritten OCR Reading:", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-        self.edit_hw = ttk.Entry(hw_frame, font=("Consolas", 14, "bold"))
-        self.edit_hw.pack(fill="x", pady=(2, 0))
-        
-        # Resolved Final registration number (SOP)
-        final_frame = tk.Frame(self.right_frame, bg="#2b2b36")
-        final_frame.pack(fill="x", padx=15, pady=5)
-        tk.Label(final_frame, text="Resolved Register No (SOP Output):", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w")
-        self.edit_final = ttk.Entry(final_frame, font=("Consolas", 16, "bold"))
-        self.edit_final.pack(fill="x", pady=(2, 0))
-        
-        # Auto-update binding for bubble and handwritten inputs
-        self.edit_bubble.bind("<KeyRelease>", self.recalculate_discrepancy_and_final)
-        self.edit_hw.bind("<KeyRelease>", self.recalculate_discrepancy_and_final)
-        
-        # Discrepancy details
-        self.disc_frame = tk.Frame(self.right_frame, bg="#2b2b36", bd=1, relief="solid", highlightthickness=0)
-        self.disc_frame.pack(fill="x", padx=15, pady=10)
-        self.disc_lbl = tk.Label(self.disc_frame, text="DISCREPANCY STATUS: OK", bg="#2e7d32", fg="#ffffff", font=("Segoe UI", 10, "bold"), height=2)
+        self.meta_lbl = tk.Label(self.right_frame,
+            text="File: —\nResolution: —\nType: —",
+            justify="left", anchor="w",
+            bg=P, fg=FGD, font=("Segoe UI", fs(8)))
+        self.meta_lbl.pack(fill="x", padx=px(8), pady=(px(4), px(2)))
+
+        self._sep(self.right_frame)
+
+        # Subject Code
+        self.edit_subject = self._field(
+            self.right_frame, "Subject Code", bold=True)
+
+        # Booklet Serial No
+        self.edit_booklet = self._field(
+            self.right_frame, "Booklet Serial No  (BookletSlNo)", bold=True)
+
+        tk.Label(self.right_frame, text="OCR Confidence:",
+                 bg=P, fg=FGD, font=("Segoe UI", fs(7)),
+                 anchor="w").pack(fill="x", padx=px(8))
+        self.edit_booklet_threshold = ttk.Entry(
+            self.right_frame, font=("Consolas", fs(8)))
+        self.edit_booklet_threshold.config(state="readonly")
+        self.edit_booklet_threshold.pack(fill="x", padx=px(8), pady=(1, px(3)))
+
+        self._sep(self.right_frame)
+
+        # Barcode — inline label + entry
+        bc_row = tk.Frame(self.right_frame, bg=P)
+        bc_row.pack(fill="x", padx=px(8), pady=(px(3), px(1)))
+        tk.Label(bc_row, text="Decoded Barcode:",
+                 bg=P, fg=FG,
+                 font=("Segoe UI", fs(8), "bold")).pack(side="left")
+        self.edit_barcode = ttk.Entry(
+            bc_row, font=("Consolas", fs(8), "bold"))
+        self.edit_barcode.pack(side="right", fill="x",
+                               expand=True, padx=(px(6), 0))
+
+        self._sep(self.right_frame)
+
+        # OMR Bubble reading
+        self.edit_bubble = self._field(
+            self.right_frame, "OMR Bubble Reading",
+            font_size=10, bold=True)
+
+        # Handwritten OCR
+        self.edit_hw = self._field(
+            self.right_frame, "Handwritten OCR Reading",
+            font_size=10, bold=True)
+
+        # Resolved Register No
+        self.edit_final = self._field(
+            self.right_frame, "Resolved Register No  (SOP Output)",
+            font_size=11, bold=True)
+
+        self.edit_bubble.bind("<KeyRelease>",
+                              self.recalculate_discrepancy_and_final)
+        self.edit_hw.bind("<KeyRelease>",
+                          self.recalculate_discrepancy_and_final)
+
+        # Discrepancy banner
+        self.disc_frame = tk.Frame(self.right_frame, bg=P,
+                                   bd=1, relief="solid")
+        self.disc_frame.pack(fill="x", padx=px(8), pady=px(4))
+        self.disc_lbl = tk.Label(self.disc_frame,
+            text="DISCREPANCY STATUS: OK",
+            bg="#2e7d32", fg="#ffffff",
+            font=("Segoe UI", fs(8), "bold"), height=2)
         self.disc_lbl.pack(fill="x")
-        
-        # Separator line
-        sep3 = tk.Frame(self.right_frame, bg="#3f3f52", height=1)
-        sep3.pack(fill="x", padx=10, pady=5)
-        
-        # Signature Detection dropdowns
-        sig_info_frame = tk.Frame(self.right_frame, bg="#2b2b36")
-        sig_info_frame.pack(fill="x", padx=15, pady=5)
-        
-        tk.Label(sig_info_frame, text="Candidate Signed:", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=5)
-        self.edit_cand_sig = ttk.Combobox(sig_info_frame, values=["YES", "NO"], state="readonly", width=10, font=("Segoe UI", 9))
-        self.edit_cand_sig.grid(row=0, column=1, sticky="w", padx=10, pady=5)
-        
-        tk.Label(sig_info_frame, text="Invigilator Signed:", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=5)
-        self.edit_inv_sig = ttk.Combobox(sig_info_frame, values=["YES", "NO"], state="readonly", width=10, font=("Segoe UI", 9))
-        self.edit_inv_sig.grid(row=1, column=1, sticky="w", padx=10, pady=5)
-        
-        # Save Button
-        self.save_btn = ttk.Button(self.right_frame, text="Save Corrections", command=self.save_corrections, style="TButton")
-        self.save_btn.pack(fill="x", padx=15, pady=15)
-        
+
+        self._sep(self.right_frame)
+
+        # Signatures — side by side on one row
+        sig_row = tk.Frame(self.right_frame, bg=P)
+        sig_row.pack(fill="x", padx=px(8), pady=px(3))
+
+        tk.Label(sig_row, text="Candidate Signed:",
+                 bg=P, fg=FG,
+                 font=("Segoe UI", fs(8), "bold")).grid(
+                     row=0, column=0, sticky="w", pady=px(2))
+        self.edit_cand_sig = ttk.Combobox(
+            sig_row, values=["YES", "NO"],
+            state="readonly", width=7,
+            font=("Segoe UI", fs(8)))
+        self.edit_cand_sig.grid(row=0, column=1,
+                                sticky="w", padx=(px(4), px(14)))
+
+        tk.Label(sig_row, text="Invigilator Signed:",
+                 bg=P, fg=FG,
+                 font=("Segoe UI", fs(8), "bold")).grid(
+                     row=0, column=2, sticky="w")
+        self.edit_inv_sig = ttk.Combobox(
+            sig_row, values=["YES", "NO"],
+            state="readonly", width=7,
+            font=("Segoe UI", fs(8)))
+        self.edit_inv_sig.grid(row=0, column=3,
+                               sticky="w", padx=(px(4), 0))
+
+        # Save button
+        self.save_btn = ttk.Button(self.right_frame,
+            text="💾  Save Corrections",
+            command=self.save_corrections)
+        self.save_btn.pack(fill="x", padx=px(8), pady=px(6))
+
     def browse_folder(self):
         folder = filedialog.askdirectory(initialdir=self.omr_dir)
         if not folder:
             return
-        
-        # Scan for images in the folder
+
         raw_paths = (
             glob.glob(os.path.join(folder, "*.jpg")) +
             glob.glob(os.path.join(folder, "*.png")) +
@@ -931,38 +1074,44 @@ class VisualOMRViewerDemo:
                 seen.add(norm)
                 image_paths.append(p)
         image_paths.sort()
-        
+
         if not image_paths:
-            messagebox.showwarning("No Images Found", f"No image files (.jpg, .jpeg, .png) found in:\n{folder}")
+            messagebox.showwarning("No Images Found",
+                f"No image files (.jpg, .jpeg, .png) found in:\n{folder}")
             return
-            
+
         self.omr_dir = folder
         self.image_paths = image_paths
-        self.filenames = [os.path.basename(p) for p in self.image_paths]
-        
-        # Reload CSV database for new folder
+        # Store full paths in combo; display full path to user
+        self.filenames = [os.path.abspath(p) for p in self.image_paths]
+
         self.load_omr_csv()
-        
-        # Update Combobox values
+
         self.file_combo.config(values=self.filenames)
         self.file_combo.current(0)
         self.process_selected_sheet()
 
     def process_selected_sheet(self):
-        filename = self.file_combo.get()
-        if not filename:
+        img_path = self.file_combo.get()
+        if not img_path:
             messagebox.showwarning("Warning", "Please select an OMR sheet first!")
             return
-            
-        # Auto-save changes of previous sheet first silently
-        if hasattr(self, 'last_loaded_filename') and self.last_loaded_filename and self.last_loaded_filename != filename:
-            if hasattr(self, 'last_loaded_folder') and self.last_loaded_folder == self.omr_dir:
+
+        # filename (basename) is used as the CSV record key
+        filename = os.path.basename(img_path)
+
+        # Auto-save previous sheet silently
+        if (hasattr(self, 'last_loaded_filename') and self.last_loaded_filename
+                and self.last_loaded_filename != filename):
+            if (hasattr(self, 'last_loaded_folder')
+                    and self.last_loaded_folder == self.omr_dir):
                 if self.current_omr_res:
-                    self.save_corrections(filename_to_save=self.last_loaded_filename, show_msg=False)
-            
-        img_path = os.path.join(self.omr_dir, filename)
+                    self.save_corrections(
+                        filename_to_save=self.last_loaded_filename,
+                        show_msg=False)
+
         if not os.path.exists(img_path):
-            messagebox.showerror("Error", f"Image file not found: {img_path}")
+            messagebox.showerror("Error", f"Image file not found:\n{img_path}")
             return
             
         try:
@@ -1060,9 +1209,10 @@ class VisualOMRViewerDemo:
 
 
             # Update Metadata Label
-            type_str = "Black & White (Padded)" if res["is_padded_bw"] else ("Grayscale (Standard)" if res["is_bw"] else "Color (Standard)")
+            type_str = ("B&W Padded" if res["is_padded_bw"]
+                        else ("Grayscale" if res["is_bw"] else "Color"))
             self.meta_lbl.config(
-                text=f"File Name: {res['filename']}\nResolution: {res['resolution']}\nSaturation: {res['avg_sat']} ({type_str})"
+                text=f"File: {res['filename']}\nRes: {res['resolution']}  |  {type_str}  |  Sat: {res['avg_sat']}"
             )
             
             # Update Discrepancy Status based on current values
@@ -1074,12 +1224,19 @@ class VisualOMRViewerDemo:
                 self.disc_frame.config(bg="#2e7d32")
                 self.disc_lbl.config(text=f"DISCREPANCY STATUS: MATCHED\n{disc_detail}", bg="#2e7d32")
                 
-            # Convert and Display Images
-            self.display_image_in_label(res["full_annotated_img"], self.full_omr_lbl, max_size=(540, 750))
-            self.display_image_in_label(res["debug_grid_img"], self.grid_canvas_lbl, max_size=(500, 360))
-            self.display_image_in_label(res["reg_box_crop"], self.hw_crop_lbl, max_size=(500, 80))
-            self.display_image_in_label(res["cand_sig_crop"], self.cand_sig_lbl, max_size=(250, 100))
-            self.display_image_in_label(res["inv_sig_crop"], self.inv_sig_lbl, max_size=(250, 100))
+            # Convert and Display Images — sizes scale with window
+            sw = self.root.winfo_screenwidth()
+            sh = self.root.winfo_screenheight()
+            self.display_image_in_label(res["full_annotated_img"], self.full_omr_lbl,
+                max_size=(int(sw*0.26), int(sh*0.82)))
+            self.display_image_in_label(res["debug_grid_img"], self.grid_canvas_lbl,
+                max_size=(int(sw*0.34), int(sh*0.46)))
+            self.display_image_in_label(res["reg_box_crop"], self.hw_crop_lbl,
+                max_size=(int(sw*0.34), int(sh*0.08)))
+            self.display_image_in_label(res["cand_sig_crop"], self.cand_sig_lbl,
+                max_size=(int(sw*0.16), int(sh*0.10)))
+            self.display_image_in_label(res["inv_sig_crop"], self.inv_sig_lbl,
+                max_size=(int(sw*0.16), int(sh*0.10)))
             
             self.status_lbl.config(text="Sheet loaded successfully", foreground="#00e676")
             self.last_loaded_filename = filename
@@ -1120,10 +1277,12 @@ class VisualOMRViewerDemo:
                     "BookletSlNo", "OMRThreshold"
                 ])
                 for filename in sorted(self.filenames):
-                    if filename in self.omr_csv_records:
-                        row = self.omr_csv_records[filename]
+                    # filenames list holds full paths; CSV key is basename
+                    key = os.path.basename(filename)
+                    if key in self.omr_csv_records:
+                        row = self.omr_csv_records[key]
                         writer.writerow([
-                            filename,
+                            key,
                             row.get("Decoded Barcode", ""),
                             row.get("OMR Bubble Reading", ""),
                             row.get("Handwritten OCR", ""),
@@ -1139,8 +1298,10 @@ class VisualOMRViewerDemo:
 
     def save_corrections(self, filename_to_save=None, show_msg=True):
         if filename_to_save is None:
-            filename_to_save = self.file_combo.get()
-            
+            # combo holds full path; use basename as record key
+            raw = self.file_combo.get()
+            filename_to_save = os.path.basename(raw) if raw else ""
+
         if not filename_to_save:
             if show_msg:
                 messagebox.showwarning("Warning", "No OMR sheet selected!")
@@ -1460,6 +1621,7 @@ class VisualOMRViewerDemo:
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
+            result["filename"],
             result["filename"],
             result["barcode"],
             result["bubble_regno"],
