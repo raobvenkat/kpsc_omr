@@ -109,10 +109,10 @@ def check_invigilator_signature_present(img):
         return False
 
     h, w = img.shape[:2]
-    x0 = int(w * 0.105)
-    x1 = int(w * 0.43)
-    y0 = int(h * 0.862)
-    y1 = int(h * 0.902)
+    x0 = int(w * 0.10)
+    x1 = int(w * 0.44)
+    y0 = int(h * 0.895)
+    y1 = int(h * 0.922)
     crop = img[max(0, y0):min(h, y1), max(0, x0):min(w, x1)]
     return check_signature_present(crop)
 

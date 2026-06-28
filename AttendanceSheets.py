@@ -200,17 +200,19 @@ class AttendanceViewerDemo:
         tree_scroll_y = ttk.Scrollbar(table_frame, orient="vertical")
         tree_scroll_y.pack(side="right", fill="y")
         
-        self.tree = ttk.Treeview(table_frame, columns=("row", "status", "sig", "reg_omr"), show="headings", yscrollcommand=tree_scroll_y.set, height=6)
+        self.tree = ttk.Treeview(table_frame, columns=("row", "status", "sig", "inv_sig", "reg_omr"), show="headings", yscrollcommand=tree_scroll_y.set, height=6)
         tree_scroll_y.config(command=self.tree.yview)
         
         self.tree.heading("row", text="Row")
         self.tree.heading("status", text="Status")
-        self.tree.heading("sig", text="Signature")
+        self.tree.heading("sig", text="Std. Signature")
+        self.tree.heading("inv_sig", text="Inv. Signature")
         self.tree.heading("reg_omr", text="Registration/OMR No")
         
         self.tree.column("row", width=60, anchor="center")
         self.tree.column("status", width=120, anchor="center")
         self.tree.column("sig", width=120, anchor="center")
+        self.tree.column("inv_sig", width=120, anchor="center")
         self.tree.column("reg_omr", width=200, anchor="center")
         self.tree.pack(fill="x", expand=False, padx=5, pady=5)
         self.tree.bind("<<TreeviewSelect>>", self.on_row_selected)
@@ -239,7 +241,7 @@ class AttendanceViewerDemo:
         self.reg_preview_lbl.pack(fill="both", expand=True)
 
         # Correction Form Frame
-        correction_frame = tk.LabelFrame(right_frame, text="Candidate Row Correction Form", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, height=90)
+        correction_frame = tk.LabelFrame(right_frame, text="Candidate Row Form", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, height=90)
         correction_frame.pack(fill="x", pady=(10, 0))
         correction_frame.pack_propagate(False)
 
@@ -273,10 +275,10 @@ class AttendanceViewerDemo:
 
     def get_invigilator_signature_box(self, w, h):
         return (
-            int(w * 0.105),
-            int(h * 0.862),
-            int(w * 0.43),
-            int(h * 0.902)
+            int(w * 0.10),
+            int(h * 0.895),
+            int(w * 0.44),
+            int(h * 0.922)
         )
 
     def on_sheet_type_changed(self):
@@ -495,6 +497,7 @@ class AttendanceViewerDemo:
                     r["row_number"],
                     r["status"],
                     "Yes" if r["signature_present"] else "No",
+                    "Yes" if self.current_invigilator_signed else "No",
                     r.get("reg_omr", "")
                 ))
             
@@ -595,6 +598,7 @@ class AttendanceViewerDemo:
             row_num + 1,
             status_val,
             sig_val,
+            "Yes" if self.current_invigilator_signed else "No",
             reg_omr_val
         ))
         
