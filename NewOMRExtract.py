@@ -851,9 +851,9 @@ class VisualOMRViewerDemo:
         content = tk.Frame(self.root, bg=BG)
         content.pack(fill="both", expand=True,
                      padx=px(5), pady=px(4))
-        content.columnconfigure(0, weight=36)
+        content.columnconfigure(0, weight=48)
         content.columnconfigure(1, weight=38)
-        content.columnconfigure(2, weight=26)
+        content.columnconfigure(2, weight=14)
         content.rowconfigure(0, weight=1)
 
         # COL 0 — Original sheet
@@ -1057,32 +1057,163 @@ class VisualOMRViewerDemo:
 
         self._sep(self.right_frame)
 
-        # ── Sheet Process Status ───────────────────────────────────────────
-        tk.Label(self.right_frame, text="Sheet Process Status:",
+        # ── Sheet Process Status grid ──────────────────────────────────────
+        status_hdr = tk.Frame(self.right_frame, bg=P)
+        status_hdr.pack(fill="x", padx=px(8), pady=(px(4), px(1)))
+
+        tk.Label(status_hdr, text="Sheet Process Status:",
                  bg=P, fg=FG,
                  font=("Segoe UI", fs(8), "bold"),
-                 anchor="w").pack(fill="x", padx=px(8), pady=(px(4), px(2)))
+                 anchor="w").pack(side="left")
 
-        self.status_badge = tk.Label(self.right_frame,
-            text="—  Not Processed",
-            bg="#37374f", fg="#aaaacc",
-            font=("Segoe UI", fs(9), "bold"),
-            anchor="center", pady=px(5), relief="flat")
-        self.status_badge.pack(fill="x", padx=px(8), pady=(0, px(4)))
+        self.status_summary_lbl = tk.Label(
+            status_hdr, text="",
+            bg=P, fg=FGD,
+            font=("Segoe UI", fs(8)),
+            anchor="w")
+        self.status_summary_lbl.pack(side="left", padx=px(6))
 
-    # ── Sheet process-status badge ─────────────────────────────────────────
-    # status: "ok" | "error" | "imported" | "warning" | "reset"
-    def set_sheet_status(self, status, detail=""):
-        _map = {
-            "ok":       ("✔  OK",              "#1b5e20", "#a5d6a7"),
-            "warning":  ("⚠  Check Required",  "#e65100", "#ffcc80"),
-            "error":    ("✘  Error",            "#b71c1c", "#ef9a9a"),
-            "imported": ("✔  Imported to DB",   "#0d47a1", "#90caf9"),
-            "reset":    ("—  Not Processed",    "#37374f", "#aaaacc"),
-        }
-        text_pfx, bg, fg = _map.get(status, _map["reset"])
-        text = f"{text_pfx}  —  {detail}" if detail else text_pfx
-        self.status_badge.config(text=text, bg=bg, fg=fg)
+        # Treeview + scrollbar wrapper
+        grid_frame = tk.Frame(self.right_frame, bg=P)
+        grid_frame.pack(fill="both", expand=True, padx=px(8), pady=(0, px(6)))
+
+        cols = ("img", "extracted", "saved_db")
+        self.status_tree = ttk.Treeview(
+            grid_frame, columns=cols, show="headings",
+            height=8, selectmode="browse")
+
+        # Column headings & widths
+        self.status_tree.heading("img",       text="Image")
+        self.status_tree.heading("extracted", text="Extracted")
+        self.status_tree.heading("saved_db",  text="Saved to DB")
+        self.status_tree.column("img",       width=px(130), anchor="w",   stretch=True)
+        self.status_tree.column("extracted", width=px(90),  anchor="center", stretch=True)
+        self.status_tree.column("saved_db",  width=px(90),  anchor="center", stretch=True)
+
+        # Row tag colours
+        self.status_tree.tag_configure("ok",       background="#1b5e20", foreground="#a5d6a7")
+        self.status_tree.tag_configure("warning",  background="#4e2600", foreground="#ffcc80")
+        self.status_tree.tag_configure("error",    background="#4e0000", foreground="#ef9a9a")
+        self.status_tree.tag_configure("imported", background="#0d2f5e", foreground="#90caf9")
+        self.status_tree.tag_configure("pending",  background="#2a2a3a", foreground="#888899")
+
+        # Style the treeview to match dark theme
+        self.style.configure("Treeview",
+            background="#1e1e2a", foreground=self._FG,
+            fieldbackground="#1e1e2a",
+            rowheight=px(22),
+            font=("Segoe UI", fs(8)))
+        self.style.configure("Treeview.Heading",
+            background=self._PANEL, foreground=self._ACCENT,
+            font=("Segoe UI", fs(8), "bold"), relief="flat")
+        self.style.map("Treeview",
+            background=[("selected", "#2a4a7f")],
+            foreground=[("selected", "#ffffff")])
+
+        vsb = ttk.Scrollbar(grid_frame, orient="vertical",
+                            command=self.status_tree.yview)
+        self.status_tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        self.status_tree.pack(side="left", fill="both", expand=True)
+
+        # Internal lookup: filename -> treeview iid
+        self._status_iids = {}
+        self._status_state = {}   # filename -> {"extracted": ..., "saved_db": ...}
+
+    # ── Status grid helpers ────────────────────────────────────────────────
+    def _status_icon(self, status):
+        return {"ok": "✔", "warning": "⚠", "error": "✘",
+                "imported": "✔", "pending": "—"}.get(status, "—")
+
+    def _ensure_status_row(self, filename):
+        """Insert a pending row for filename if it doesn't exist yet."""
+        if filename not in self._status_iids:
+            iid = self.status_tree.insert(
+                "", "end",
+                values=(filename, "—", "—"),
+                tags=("pending",))
+            self._status_iids[filename] = iid
+
+    def _extracted_status_from_result(self, res):
+        """Map processing result to extracted-column status."""
+        if not res:
+            return "error"
+        barcode_ok = bool(res["barcode"] and res["barcode"] != "Not Detected")
+        regno_ok = bool(res["final_regno"].strip())
+        _, has_disc, _ = determine_final_regno(
+            res["bubble_regno"], res["handwritten_regno"])
+        if not barcode_ok or not regno_ok or has_disc:
+            return "warning"
+        return "ok"
+
+    def set_sheet_status(self, filename, extracted=None, saved_db=None):
+        """
+        Update the status grid row for `filename`.
+        extracted / saved_db each accept: None (no change), "ok", "warning", "error", "pending"
+        """
+        if not hasattr(self, 'status_tree'):
+            return
+        self._ensure_status_row(filename)
+        iid = self._status_iids[filename]
+
+        if filename not in self._status_state:
+            self._status_state[filename] = {}
+        if extracted:
+            self._status_state[filename]["extracted"] = extracted
+        if saved_db:
+            self._status_state[filename]["saved_db"] = saved_db
+
+        cur = self.status_tree.item(iid, "values")
+        new_ext = (self._status_icon(extracted) + "  " + extracted.upper()
+                   if extracted else cur[1])
+        new_db  = (self._status_icon(saved_db)  + "  " + saved_db.upper()
+                   if saved_db  else cur[2])
+
+        # Overall row tag = worst of the two
+        rank = {"error": 3, "warning": 2, "imported": 1, "ok": 1, "pending": 0}
+        tag = max([extracted or "pending", saved_db or "pending"],
+                  key=lambda s: rank.get(s, 0))
+        if (saved_db or "pending") == "imported":
+            tag = "imported"
+
+        self.status_tree.item(iid, values=(filename, new_ext, new_db), tags=(tag,))
+        # Scroll to keep updated row visible
+        self.status_tree.see(iid)
+
+    def _refresh_status_summary(self):
+        """Update summary counts beside the Sheet Process Status heading."""
+        if not hasattr(self, 'status_summary_lbl'):
+            return
+        extracted = imported = errors = 0
+        for state in self._status_state.values():
+            ext = state.get("extracted")
+            db = state.get("saved_db")
+            if ext in ("ok", "warning"):
+                extracted += 1
+            if db == "imported":
+                imported += 1
+            if ext == "error" or db == "error":
+                errors += 1
+        if extracted or imported or errors:
+            self.status_summary_lbl.config(
+                text=(f"Extracted: {extracted}, "
+                      f"Imported to DB: {imported}, "
+                      f"Error Sheets: {errors}"))
+        else:
+            self.status_summary_lbl.config(text="")
+
+    def _init_status_grid(self):
+        """Populate grid with all known filenames as pending rows."""
+        if not hasattr(self, 'status_tree'):
+            return
+        # Clear existing rows
+        for iid in self.status_tree.get_children():
+            self.status_tree.delete(iid)
+        self._status_iids = {}
+        self._status_state = {}
+        for fp in self.filenames:
+            self._ensure_status_row(os.path.basename(fp))
+        self._refresh_status_summary()
 
     def browse_folder(self):
         folder = filedialog.askdirectory(initialdir=self.omr_dir)
@@ -1120,6 +1251,9 @@ class VisualOMRViewerDemo:
 
         self.file_combo.config(values=self.filenames)
         self.file_combo.current(0)
+        self.progress["value"] = 0
+        self._init_status_grid()   # reset grid for the new folder
+        self.status_lbl.config(text="Ready", foreground="#00e676")
         self.process_selected_sheet()
 
     def process_selected_sheet(self):
@@ -1147,14 +1281,14 @@ class VisualOMRViewerDemo:
             
         try:
             self.status_lbl.config(text="Processing...", foreground="#ffeb3b")
-            self.set_sheet_status("reset")
+            self.set_sheet_status(filename, extracted="pending")
             self.root.update_idletasks()
             
             # Run processing
             res = process_single_sheet_for_demo(img_path)
             if res is None:
                 self.status_lbl.config(text="Processing failed", foreground="#ff3d00")
-                self.set_sheet_status("error", "Processing failed")
+                self.set_sheet_status(filename, extracted="error")
                 messagebox.showerror("Error", "Processing failed!")
                 return
                 
@@ -1257,22 +1391,15 @@ class VisualOMRViewerDemo:
                 self.disc_frame.config(bg="#2e7d32")
                 self.disc_lbl.config(text=f"DISCREPANCY STATUS: MATCHED\n{disc_detail}", bg="#2e7d32")
 
-            # Determine sheet process status
-            barcode_ok  = bool(res["barcode"] and res["barcode"] != "Not Detected")
-            regno_ok    = bool(res["final_regno"].strip())
-            if not barcode_ok or not regno_ok:
-                self.set_sheet_status("warning",
-                    "Barcode missing" if not barcode_ok else "RegNo missing")
-            elif has_disc:
-                self.set_sheet_status("warning", "RegNo mismatch")
-            else:
-                self.set_sheet_status("ok", "Extracted")
+            self.set_sheet_status(
+                filename, extracted=self._extracted_status_from_result(res))
                 
-            # Convert and Display Images — sizes scale with window
+            # Convert and Display Images — sizes scale with panel layout
             sw = self.root.winfo_screenwidth()
             sh = self.root.winfo_screenheight()
-            self.display_image_in_label(res["full_annotated_img"], self.full_omr_lbl,
-                max_size=(int(sw*0.26), int(sh*0.82)))
+            self.display_image_in_label(
+                res["full_annotated_img"], self.full_omr_lbl,
+                max_size=self._label_max_size(self.full_omr_lbl))
             self.display_image_in_label(res["debug_grid_img"], self.grid_canvas_lbl,
                 max_size=(int(sw*0.34), int(sh*0.46)))
             self.display_image_in_label(res["reg_box_crop"], self.hw_crop_lbl,
@@ -1287,7 +1414,7 @@ class VisualOMRViewerDemo:
             self.last_loaded_folder = self.omr_dir
         except Exception as e:
             self.status_lbl.config(text="Error processing sheet", foreground="#ff3d00")
-            self.set_sheet_status("error", str(e)[:60])
+            self.set_sheet_status(filename, extracted="error")
             import traceback
             traceback.print_exc()
             messagebox.showerror("Execution Error", f"Failed during sheet processing:\n{e}")
@@ -1565,6 +1692,14 @@ class VisualOMRViewerDemo:
     #   tk_label.image = photo
 
     
+    def _label_max_size(self, label, pad=8):
+        """Return (max_w, max_h) from a label widget's current layout size."""
+        self.root.update_idletasks()
+        return (
+            max(label.winfo_width() - pad, 120),
+            max(label.winfo_height() - pad, 120),
+        )
+
     def display_image_in_label(self, cv_img, tk_label, max_size=(500, 300)):
         if cv_img is None or cv_img.size == 0:
             tk_label.config(image="", text="Crop Unavailable")
@@ -1683,9 +1818,11 @@ class VisualOMRViewerDemo:
         
         conn.commit()
         conn.close()
-        # Update badge for the currently displayed sheet
+        # Update grid for the currently displayed sheet
         if hasattr(self, 'set_sheet_status'):
-            self.set_sheet_status("imported", "Saved to DB")
+            fn = os.path.basename(result.get("filename", ""))
+            if fn:
+                self.set_sheet_status(fn, saved_db="imported")
 
     def process_all_sheets_to_mssql(self):
         if not self.omr_dir or not os.path.exists(self.omr_dir):
@@ -1716,32 +1853,38 @@ class VisualOMRViewerDemo:
                 conn.close()
                 return
     
-            #total = len(image_paths)
-            total = len(self.image_paths)
+            total = len(image_paths)
+            self._init_status_grid()
             self.progress["value"] = 0
             self.progress["maximum"] = total
             
-            
             for i, img_path in enumerate(image_paths, 1):
-                self.progress["value"] = i
-                percent = int((i / total) * 100)
                 filename = os.path.basename(img_path)
-            
-                self.status_lbl.config(text=f"{percent}% - {filename}")
+
+                self.set_sheet_status(filename, extracted="pending", saved_db="pending")
+                self.status_lbl.config(
+                    text=f"Processing {i}/{total} — {filename}",
+                    foreground="#ffeb3b")
                 self.root.update_idletasks()
-            
+
                 try:
                     res = process_single_sheet_for_demo(img_path)
                     if not res:
+                        self.set_sheet_status(
+                            filename, extracted="error", saved_db="error")
                         continue
-            
+
+                    extracted = self._extracted_status_from_result(res)
+
                     cursor.execute(
                         f"SELECT COUNT(*) FROM {table_name} WHERE filename = ?",
                         (res["filename"],)
                     )
                     if cursor.fetchone()[0] > 0:
+                        self.set_sheet_status(
+                            filename, extracted=extracted, saved_db="imported")
                         continue
-            
+
                     cursor.execute(f"""
                     INSERT INTO {table_name} (
                         filename, barcode, bubble_regno, handwritten_regno,
@@ -1764,20 +1907,26 @@ class VisualOMRViewerDemo:
                         res.get("BookletSlNo", res.get("booklet_number", "")),
                         res.get("omr_threshold", 0.0)
                     ))
-            
-                except Exception as e:
-                    print(f"Error processing {filename}: {e}")
-            
-            # ✅ AFTER loop completes
-            self.progress["value"] = total
-            self.status_lbl.config(text="✅ All sheets processed", foreground="#00e676")
+                    self.set_sheet_status(
+                        filename, extracted=extracted, saved_db="imported")
 
-    
+                except Exception as e:
+                    self.set_sheet_status(
+                        filename, extracted="error", saved_db="error")
+                    print(f"Error processing {filename}: {e}")
+
+                self.progress["value"] = i
+                self.root.update_idletasks()
+
             conn.commit()
             conn.close()
-    
-            self.status_lbl.config(text="✅ All sheets processed & saved to MSSQL", foreground="#00e676")
-            messagebox.showinfo("Success", "All sheets processed and saved to database!")
+
+            self._refresh_status_summary()
+            self.status_lbl.config(
+                text="✅ All sheets processed & saved to MSSQL",
+                foreground="#00e676")
+            messagebox.showinfo("Success",
+                "All sheets processed and saved to database!")
     
         except Exception as e:
             messagebox.showerror("Database Error", str(e))
