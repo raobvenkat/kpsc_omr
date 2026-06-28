@@ -803,8 +803,12 @@ def process_single_sheet_for_demo(img_path):
     cv2.rectangle(full_annotated, (inv_sig_x_start, inv_sig_y_start), (inv_sig_x_end, inv_sig_y_end), (0, 255, 255), 3)
     cv2.putText(full_annotated, "Invigilator Sig", (inv_sig_x_start, max(25, inv_sig_y_start - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
     
+    image_path = os.path.abspath(img_path)
+
     return {
-        "filename": os.path.basename(img_path),
+        "filename": image_path,
+        "image_name": os.path.basename(img_path),
+        "image_path": image_path,
         "resolution": f"{w}x{h}",
         "avg_sat": round(avg_sat, 2),
         "is_bw": is_bw,
@@ -994,10 +998,14 @@ class VisualOMRViewerDemo:
             style="Thin.Horizontal.TProgressbar")
         self.progress.pack(side="left", padx=px(4))
 
-        # Right side: Process All button
+        # Right side: Process All + Export buttons
+        self.export_btn = ttk.Button(top, text="Export to Excel",
+            command=self.export_results_to_excel, width=16,
+            state="disabled")
+        self.export_btn.pack(side="right", padx=(px(2), px(12)))
         self.All_btn = ttk.Button(top, text="⚙  Process All",
             command=self.process_all_sheets_to_mssql, width=14)
-        self.All_btn.pack(side="right", padx=px(12))
+        self.All_btn.pack(side="right", padx=px(2))
 
         # thin separator below controls
         tk.Frame(self.root, bg="#33334a", height=1).pack(fill="x", side="top")
@@ -1407,6 +1415,8 @@ class VisualOMRViewerDemo:
         self.file_combo.config(values=self.filenames)
         self.file_combo.current(0)
         self.progress["value"] = 0
+        if hasattr(self, "export_btn"):
+            self.export_btn.config(state="disabled")
         self._init_status_grid()   # reset grid for the new folder
         self.status_lbl.config(text="Ready", foreground="#00e676")
         self.process_selected_sheet()
@@ -1457,17 +1467,15 @@ class VisualOMRViewerDemo:
                 self.next_btn.config(state="disabled")
                 self.All_btn.config(state="disabled")
             else:
+                self.All_btn.config(state="normal")
                 if current_idx <= 0:
                     self.prev_btn.config(state="disabled")
                 else:
                     self.prev_btn.config(state="normal")
-                    self.All_btn.config(state="normal")
                 if current_idx >= total_files - 1 or current_idx == -1:
                     self.next_btn.config(state="disabled")
-                    self.All_btn.config(state="disabled")
                 else:
                     self.next_btn.config(state="normal")
-                    self.All_btn.config(state="normal")
             
             # Check if we have saved corrections in our CSV database
             if filename in self.omr_csv_records:
@@ -1486,20 +1494,8 @@ class VisualOMRViewerDemo:
                 cand_sig = "YES" if res["cand_signed"] else "NO"
                 inv_sig = "YES" if res["inv_signed"] else "NO"
                 
-                # Auto-populate in-memory record
-                self.omr_csv_records[filename] = {
-                    "Filename": filename,
-                    "Decoded Barcode": barcode,
-                    "OMR Bubble Reading": bubble,
-                    "Handwritten OCR": hw,
-                    "Resolved Register No": final,
-                    "Candidate Signed": cand_sig,
-                    "Invigilator Signed": inv_sig,
-                    "Subject Code": res.get("subject_code", ""),
-                    "BookletSlNo": res.get("BookletSlNo", ""),
-                    "OMRThreshold": str(res.get("omr_threshold", "")),
-                    "IsBlack": str(res.get("isblack", ""))
-                }
+                # Keep processed data in memory only. Export writes the file.
+                self.omr_csv_records[filename] = self.build_export_row_from_result(res)
                 
             # Load into editing inputs
             self.edit_barcode.delete(0, tk.END)
@@ -1590,42 +1586,80 @@ class VisualOMRViewerDemo:
                     for row in reader:
                         filename = row.get("Filename")
                         if filename:
-                            self.omr_csv_records[filename] = row
+                            self.omr_csv_records[os.path.basename(filename)] = row
             except Exception as e:
                 print(f"Error loading CSV master: {e}")
 
-    def save_omr_csv(self):
+    def build_export_row_from_result(self, res):
+        return {
+            "Filename": res.get("filename", ""),
+            "Decoded Barcode": res.get("barcode", ""),
+            "OMR Bubble Reading": res.get("bubble_regno", ""),
+            "Handwritten OCR": res.get("handwritten_regno", ""),
+            "Resolved Register No": res.get("final_regno", ""),
+            "Candidate Signed": "YES" if res.get("cand_signed") else "NO",
+            "Invigilator Signed": "YES" if res.get("inv_signed") else "NO",
+            "Subject Code": res.get("subject_code", ""),
+            "BookletSlNo": res.get("BookletSlNo", res.get("booklet_number", "")),
+            "OMRThreshold": str(res.get("omr_threshold", "")),
+            "IsBlack": str(res.get("isblack", ""))
+        }
+
+    def write_omr_csv(self, csv_path):
         import csv
-        csv_path = os.path.join(self.omr_dir, "OMR_Sheet_Results.csv")
+        with open(csv_path, mode="w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow([
+                "Filename", "Decoded Barcode", "OMR Bubble Reading",
+                "Handwritten OCR", "Resolved Register No",
+                "Candidate Signed", "Invigilator Signed", "Subject Code",
+                "BookletSlNo", "OMRThreshold", "IsBlack"
+            ])
+            for filename in sorted(self.filenames):
+                # filenames list holds full paths; CSV key is basename
+                key = os.path.basename(filename)
+                if key in self.omr_csv_records:
+                    row = self.omr_csv_records[key]
+                    writer.writerow([
+                        row.get("Filename", key),
+                        row.get("Decoded Barcode", ""),
+                        row.get("OMR Bubble Reading", ""),
+                        row.get("Handwritten OCR", ""),
+                        row.get("Resolved Register No", ""),
+                        row.get("Candidate Signed", ""),
+                        row.get("Invigilator Signed", ""),
+                        row.get("Subject Code", ""),
+                        row.get("BookletSlNo", ""),
+                        row.get("OMRThreshold", ""),
+                        row.get("IsBlack", "")
+                    ])
+
+    def export_results_to_excel(self):
+        if not self.omr_csv_records:
+            messagebox.showwarning("Warning", "No processed data available to export!")
+            return
+
+        initial_file = "OMR_Sheet_Results.csv"
+        save_path = filedialog.asksaveasfilename(
+            title="Export OMR results",
+            initialdir=self.omr_dir if self.omr_dir else os.getcwd(),
+            initialfile=initial_file,
+            defaultextension=".csv",
+            filetypes=[
+                ("Excel CSV", "*.csv"),
+                ("All Files", "*.*")
+            ])
+        if not save_path:
+            return
+
         try:
-            with open(csv_path, mode="w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    "Filename", "Decoded Barcode", "OMR Bubble Reading", 
-                    "Handwritten OCR", "Resolved Register No", 
-                    "Candidate Signed", "Invigilator Signed", "Subject Code",
-                    "BookletSlNo", "OMRThreshold", "IsBlack"
-                ])
-                for filename in sorted(self.filenames):
-                    # filenames list holds full paths; CSV key is basename
-                    key = os.path.basename(filename)
-                    if key in self.omr_csv_records:
-                        row = self.omr_csv_records[key]
-                        writer.writerow([
-                            key,
-                            row.get("Decoded Barcode", ""),
-                            row.get("OMR Bubble Reading", ""),
-                            row.get("Handwritten OCR", ""),
-                            row.get("Resolved Register No", ""),
-                            row.get("Candidate Signed", ""),
-                            row.get("Invigilator Signed", ""),
-                            row.get("Subject Code", ""),
-                            row.get("BookletSlNo", ""),
-                            row.get("OMRThreshold", ""),
-                            row.get("IsBlack", "")
-                        ])
+            self.write_omr_csv(save_path)
+            self.status_lbl.config(
+                text=f"Exported to: {os.path.basename(save_path)}",
+                foreground="#00e676")
+            messagebox.showinfo("Success", f"Results exported to:\n{save_path}")
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save CSV database: {e}")
+            messagebox.showerror("Error", f"Failed to export results: {e}")
 
     def save_corrections(self, filename_to_save=None, show_msg=True):
         if filename_to_save is None:
@@ -1646,8 +1680,15 @@ class VisualOMRViewerDemo:
         inv_sig = self.edit_inv_sig.get()
         
         # Update in-memory record
+        image_path = ""
+        if self.current_omr_res:
+            image_path = self.current_omr_res.get("image_path", "")
+        if not image_path:
+            raw = self.file_combo.get()
+            image_path = os.path.abspath(raw) if raw else filename_to_save
+
         self.omr_csv_records[filename_to_save] = {
-            "Filename": filename_to_save,
+            "Filename": image_path,
             "Decoded Barcode": barcode,
             "OMR Bubble Reading": bubble,
             "Handwritten OCR": hw,
@@ -1662,12 +1703,9 @@ class VisualOMRViewerDemo:
                 if self.current_omr_res else "")
         }
 
-        
-        # Write to master CSV file
-        self.save_omr_csv()
-        
-        csv_path = os.path.join(self.omr_dir, "OMR_Sheet_Results.csv")
-        self.status_lbl.config(text="Saved to: OMR_Sheet_Results.csv", foreground="#00e676")
+        self.status_lbl.config(
+            text="Corrections saved in memory",
+            foreground="#00e676")
         
         if show_msg:
             # Recalculate discrepancy status display for the current UI
@@ -1679,7 +1717,10 @@ class VisualOMRViewerDemo:
                 self.disc_frame.config(bg="#2e7d32")
                 self.disc_lbl.config(text=f"DISCREPANCY STATUS: MATCHED\n{disc_detail}", bg="#2e7d32")
                 
-            messagebox.showinfo("Success", f"Corrections for {filename_to_save} saved successfully to:\n{csv_path}")
+            messagebox.showinfo(
+                "Success",
+                f"Corrections for {filename_to_save} saved in memory.\n"
+                "Use Export to Excel to save a file.")
             
     def navigate_sheet(self, direction):
         if not self.file_combo["values"]:
@@ -2029,9 +2070,12 @@ class VisualOMRViewerDemo:
                 return
     
             total = len(image_paths)
+            processed_count = 0
             self._init_status_grid()
             self.progress["value"] = 0
             self.progress["maximum"] = total
+            if hasattr(self, "export_btn"):
+                self.export_btn.config(state="disabled")
             
             for i, img_path in enumerate(image_paths, 1):
                 filename = os.path.basename(img_path)
@@ -2050,6 +2094,8 @@ class VisualOMRViewerDemo:
                         continue
 
                     extracted = self._extracted_status_from_result(res)
+                    self.omr_csv_records[filename] = self.build_export_row_from_result(res)
+                    processed_count += 1
 
                     cursor.execute(
                         f"SELECT COUNT(*) FROM {table_name} WHERE filename = ?",
@@ -2076,6 +2122,8 @@ class VisualOMRViewerDemo:
             conn.close()
 
             self._refresh_status_summary()
+            if hasattr(self, "export_btn") and processed_count > 0:
+                self.export_btn.config(state="normal")
             self.status_lbl.config(
                 text="✅ All sheets processed & saved to MSSQL",
                 foreground="#00e676")
