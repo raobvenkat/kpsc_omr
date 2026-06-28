@@ -68,9 +68,9 @@ class AttendanceViewerDemo:
         self.current_records = []
         self.current_img = None
         self.attendance_csv_records = {} # filename -> list of records
+        self.current_dir = None
         
         self.build_ui()
-        self.on_sheet_type_changed()
 
     def build_ui(self):
         # Header row
@@ -79,7 +79,7 @@ class AttendanceViewerDemo:
         header.pack_propagate(False)
 
         tk.Label(header,
-                 text="Nominal Roll Engine",
+                 text="Nominal Roll Extraction Engine",
                  bg="#2b2b36", fg="#00e676",
                  font=("Segoe UI", 18, "bold"),
                  anchor="center").pack(fill="both", expand=True)
@@ -113,6 +113,14 @@ class AttendanceViewerDemo:
         self.subject_entry = ttk.Entry(self.header_frame, width=10, font=("Segoe UI", 10))
         self.subject_entry.pack(side="left", padx=5)
         self.subject_entry.bind("<KeyRelease>", lambda e: self.on_header_changed())
+
+        self.status_lbl = ttk.Label(self.header_frame, text="Ready", font=("Segoe UI", 10, "italic"), background="#2b2b36", foreground="#ffeb3b")
+        self.status_lbl.pack(side="left", padx=(24, 8))
+
+        self.progress = ttk.Progressbar(
+            self.header_frame, orient="horizontal", length=180,
+            mode="determinate", style="Thin.Horizontal.TProgressbar")
+        self.progress.pack(side="left", padx=4)
         
         lbl_type = ttk.Label(top_frame, text="Sheet Type:", font=("Segoe UI", 11, "bold"), background="#2b2b36")
         lbl_type.pack(side="left", padx=(20, 5))
@@ -128,26 +136,18 @@ class AttendanceViewerDemo:
         browse_btn = ttk.Button(top_frame, text="Select Folder...", command=self.browse_folder, style="TButton")
         browse_btn.pack(side="left", padx=5)
         
-        self.prev_btn = ttk.Button(top_frame, text="<- Prev", command=lambda: self.navigate_sheet(-1), style="TButton", width=8)
+        self.prev_btn = ttk.Button(top_frame, text="<- Prev", command=lambda: self.navigate_sheet(-1), style="TButton", width=8, state="disabled")
         self.prev_btn.pack(side="left", padx=2)
         
         self.file_combo = ttk.Combobox(top_frame, state="readonly", width=20, font=("Segoe UI", 10))
         self.file_combo.pack(side="left", padx=5)
         self.file_combo.bind("<<ComboboxSelected>>", lambda e: self.process_selected_sheet())
         
-        self.next_btn = ttk.Button(top_frame, text="Next ->", command=lambda: self.navigate_sheet(1), style="TButton", width=8)
+        self.next_btn = ttk.Button(top_frame, text="Next ->", command=lambda: self.navigate_sheet(1), style="TButton", width=8, state="disabled")
         self.next_btn.pack(side="left", padx=2)
         
         # Run Processing button removed as Next/Prev and selection handles processing automatically
         
-        self.status_lbl = ttk.Label(top_frame, text="Ready", font=("Segoe UI", 10, "italic"), background="#2b2b36", foreground="#ffeb3b")
-        self.status_lbl.pack(side="left", padx=20)
-
-        self.progress = ttk.Progressbar(
-            top_frame, orient="horizontal", length=150,
-            mode="determinate", style="Thin.Horizontal.TProgressbar")
-        self.progress.pack(side="left", padx=4)
-
         self.export_btn = ttk.Button(top_frame, text="Export to Excel", command=self.export_results_to_excel, style="TButton", width=16, state="disabled")
         self.export_btn.pack(side="right", padx=(5, 10))
 
@@ -162,9 +162,17 @@ class AttendanceViewerDemo:
         self.left_frame = tk.LabelFrame(content_frame, text="Annotated Sheet Viewer", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, width=650)
         self.left_frame.pack(fill="both", side="left", padx=(0, 10))
         self.left_frame.pack_propagate(False)
-        
-        self.image_lbl = tk.Label(self.left_frame, bg="#2b2b36")
-        self.image_lbl.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self.image_canvas = tk.Canvas(self.left_frame, bg="#2b2b36", highlightthickness=0)
+        self.image_scroll_y = ttk.Scrollbar(self.left_frame, orient="vertical", command=self.image_canvas.yview)
+        self.image_scroll_x = ttk.Scrollbar(self.left_frame, orient="horizontal", command=self.image_canvas.xview)
+        self.image_canvas.configure(
+            yscrollcommand=self.image_scroll_y.set,
+            xscrollcommand=self.image_scroll_x.set)
+        self.image_scroll_y.pack(side="right", fill="y")
+        self.image_scroll_x.pack(side="bottom", fill="x")
+        self.image_canvas.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        self.image_canvas.bind("<MouseWheel>", self.on_annotated_image_mousewheel)
         
         # Right Panel: Table and crops
         right_frame = tk.Frame(content_frame, bg="#1c1c22")
@@ -235,33 +243,40 @@ class AttendanceViewerDemo:
         self.apply_btn = ttk.Button(correction_frame, text="Apply Correction", command=self.apply_corrections, style="TButton")
         self.apply_btn.grid(row=0, column=6, sticky="e", padx=10, pady=15)
 
+    def on_annotated_image_mousewheel(self, event):
+        if event.state & 0x0001:
+            self.image_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+        else:
+            self.image_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     def on_sheet_type_changed(self):
-        choice = self.type_combo.get()
-        if "Sheet 1" in choice:
-            self.current_dir = self.sheet1_dir
-        else:
-            self.current_dir = self.sheet2_dir
-
+        self.current_dir = None
+        self.current_records = []
+        self.current_img = None
+        self.attendance_csv_records = {}
+        self.file_combo["values"] = []
+        self.file_combo.set("")
+        self.image_canvas.delete("all")
+        self.image_canvas.configure(scrollregion=(0, 0, 0, 0))
+        self.sig_preview_lbl.config(image="")
+        self.reg_preview_lbl.config(image="")
+        for item in self.tree.get_children():
+            self.tree.delete(item)
         if hasattr(self, "export_btn"):
             self.export_btn.config(state="disabled")
         if hasattr(self, "progress"):
             self.progress["value"] = 0
-            
-        if os.path.exists(self.current_dir):
-            self.load_attendance_csv()
-            files = sorted([f for f in os.listdir(self.current_dir) if f.endswith(".jpg") or f.endswith(".png")])
-            self.file_combo["values"] = files
-            if files:
-                self.file_combo.current(0)
-                self.process_selected_sheet()
-        else:
-            self.file_combo["values"] = []
+        self.prev_btn.config(state="disabled")
+        self.next_btn.config(state="disabled")
+        self.status_lbl.config(text="Select a folder to begin", foreground="#ffeb3b")
 
     def process_selected_sheet(self, force_reprocess=False):
         fname = self.file_combo.get()
         if not fname:
             messagebox.showwarning("Warning", "No image selected!")
+            return
+        if not self.current_dir:
+            messagebox.showwarning("Warning", "Please select a folder first!")
             return
             
         img_path = os.path.join(self.current_dir, fname)
@@ -400,16 +415,14 @@ class AttendanceViewerDemo:
                     # Registration No box
                     cv2.rectangle(annotated, (reg_x0 + shift, yc - 25), (reg_x1 + shift, yc + 25), (255, 255, 0), 2)
                 
-            # Resize annotated image to fit canvas
-            scale = 700.0 / h
-            new_w = int(w * scale)
-            resized = cv2.resize(annotated, (new_w, 700))
-            
-            # Convert to PIL
-            color_cvt = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+            # Display full annotated image in scrollable viewer.
+            color_cvt = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(color_cvt)
             self.tk_img = ImageTk.PhotoImage(image=pil_img)
-            self.image_lbl.config(image=self.tk_img)
+            self.image_canvas.delete("all")
+            self.image_canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
+            self.image_canvas.configure(
+                scrollregion=(0, 0, self.tk_img.width(), self.tk_img.height()))
             
             # Update Treeview
             for item in self.tree.get_children():
