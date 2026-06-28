@@ -30,6 +30,14 @@ def get_ocr_reader():
         _READER = easyocr.Reader(['en'], gpu=use_gpu)
     return _READER
 
+print("CUDA available:", torch.cuda.is_available())
+
+
+if torch.cuda.is_available():
+    print("GPU:", torch.cuda.get_device_name(0))
+else:
+    print("Using CPU")
+
 try:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 except NameError:
@@ -642,7 +650,7 @@ def process_single_sheet_for_demo(img_path):
     cv2.putText(full_annotated, "Invigilator Sig", (inv_sig_x_start, max(25, inv_sig_y_start - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
     
     subject_code, subject_crop = VisualOMRViewerDemo.extract_subject_code(None, img, scale_x, scale_y)
-    booklet_no, booklet_crop = VisualOMRViewerDemo.extract_booklet_number(None, img, scale_x, scale_y)
+    booklet_sl_no, omr_threshold, booklet_crop = VisualOMRViewerDemo.extract_booklet_number(None, img, scale_x, scale_y)
 
     return {
         "filename": os.path.basename(img_path),
@@ -656,7 +664,9 @@ def process_single_sheet_for_demo(img_path):
         "final_regno": final_regno,
         
         "subject_code": subject_code,
-        "booklet_number": booklet_no,
+        "booklet_number": booklet_sl_no,        # kept as "booklet_number" for UI compat
+        "BookletSlNo": booklet_sl_no,           # canonical field name
+        "omr_threshold": omr_threshold,         # OCR confidence score for booklet number
         "subject_crop": subject_crop,
         "booklet_crop": booklet_crop,
 
@@ -816,11 +826,15 @@ class VisualOMRViewerDemo:
         self.edit_subject = ttk.Entry(self.right_frame, font=("Consolas", 12, "bold"))
         self.edit_subject.pack(fill="x", padx=15, pady=2)
         
-        tk.Label(self.right_frame, text="Booklet Number:", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=15)
+        tk.Label(self.right_frame, text="Booklet Serial No (BookletSlNo):", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=15)
 
         self.edit_booklet = ttk.Entry(self.right_frame, font=("Consolas", 12, "bold"))
         self.edit_booklet.pack(fill="x", padx=15, pady=2)
 
+        tk.Label(self.right_frame, text="OCR Confidence (BookletSlNo):", bg="#2b2b36", fg="#aaaaaa", font=("Segoe UI", 9)).pack(anchor="w", padx=15)
+        self.edit_booklet_threshold = ttk.Entry(self.right_frame, font=("Consolas", 10))
+        self.edit_booklet_threshold.config(state="readonly")
+        self.edit_booklet_threshold.pack(fill="x", padx=15, pady=(0, 4))
 
         self.build_results_panel()
         
@@ -1009,8 +1023,10 @@ class VisualOMRViewerDemo:
                     "Handwritten OCR": hw,
                     "Resolved Register No": final,
                     "Candidate Signed": cand_sig,
-                    "Invigilator Signed": inv_sig
-                        
+                    "Invigilator Signed": inv_sig,
+                    "Subject Code": res.get("subject_code", ""),
+                    "BookletSlNo": res.get("BookletSlNo", ""),
+                    "OMRThreshold": str(res.get("omr_threshold", ""))
                 }
                 
             # Load into editing inputs
@@ -1035,6 +1051,12 @@ class VisualOMRViewerDemo:
             
             self.edit_booklet.delete(0, tk.END)
             self.edit_booklet.insert(0, res["booklet_number"])
+
+            # Populate threshold (read-only diagnostic field)
+            self.edit_booklet_threshold.config(state="normal")
+            self.edit_booklet_threshold.delete(0, tk.END)
+            self.edit_booklet_threshold.insert(0, str(res.get("omr_threshold", "")))
+            self.edit_booklet_threshold.config(state="readonly")
 
 
             # Update Metadata Label
@@ -1094,7 +1116,8 @@ class VisualOMRViewerDemo:
                 writer.writerow([
                     "Filename", "Decoded Barcode", "OMR Bubble Reading", 
                     "Handwritten OCR", "Resolved Register No", 
-                    "Candidate Signed", "Invigilator Signed","Subject Code", "Booklet Number"
+                    "Candidate Signed", "Invigilator Signed", "Subject Code",
+                    "BookletSlNo", "OMRThreshold"
                 ])
                 for filename in sorted(self.filenames):
                     if filename in self.omr_csv_records:
@@ -1107,10 +1130,9 @@ class VisualOMRViewerDemo:
                             row.get("Resolved Register No", ""),
                             row.get("Candidate Signed", ""),
                             row.get("Invigilator Signed", ""),
-                            
                             row.get("Subject Code", ""),
-                            row.get("Booklet Number", "")
-
+                            row.get("BookletSlNo", ""),
+                            row.get("OMRThreshold", "")
                         ])
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save CSV database: {e}")
@@ -1141,7 +1163,8 @@ class VisualOMRViewerDemo:
             "Candidate Signed": cand_sig,
             "Invigilator Signed": inv_sig,
             "Subject Code": self.edit_subject.get().strip(),
-            "Booklet Number": self.edit_booklet.get().strip()
+            "BookletSlNo": self.edit_booklet.get().strip(),
+            "OMRThreshold": self.edit_booklet_threshold.get().strip()
         }
 
         
@@ -1220,33 +1243,96 @@ class VisualOMRViewerDemo:
         
         return digits.strip(), crop
 
-    # Booklet Number Extraction
+    # Booklet Serial Number Extraction — reads large printed 7-digit number below QCA label (bottom-right)
     def extract_booklet_number(self, img, scale_x, scale_y):
+        """
+        Reads the QCA Booklet Serial Number — a large bold printed number located in a
+        bordered box at the bottom-right of the sheet, below the 'QCA Booklet Serial Number' label.
+        At 1654x1090 reference: the number box is approx y=910-980, x=920-1580.
+        Uses OCR on the cropped region.
+        Returns (booklet_sl_no_str, ocr_confidence, debug_crop_img).
+        """
         h, w, _ = img.shape
-        
-        x1 = int(700 * scale_x)
-        x2 = int(w - 40 * scale_x)
-        y1 = int(h - 180 * scale_y)
-        y2 = int(h - 40 * scale_y)
-        
-        crop = img[y1:y2, x1:x2]
-        
-        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        _, th = cv2.threshold(gray, 140, 255, cv2.THRESH_BINARY_INV)
-        
-        kernel = np.ones((3,3), np.uint8)
-        th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, kernel)
-        
-        reader = get_ocr_reader()
-        results = reader.readtext(th, detail=0)
 
-        # Combine all detected text
-        text = " ".join(results)
-        
-        # Extract only digits
-        digits = ''.join(filter(str.isdigit, text))
-        
-        return digits.strip(), crop
+        # Tight crop around the booklet serial number box (bottom-right corner)
+        # Purple box in reference image (1654x1090):
+        #   x: ~920–1570  →  55.6% – 94.9% of width
+        #   y: ~790–870   →  72.5% – 79.8% of height
+        x1 = int(w * 0.556)
+        x2 = int(w * 0.949)
+        y1 = int(h * 0.725)
+        y2 = int(h * 0.800)
+
+        # Clamp to image bounds
+        x1 = max(0, x1); x2 = min(w, x2)
+        y1 = max(0, y1); y2 = min(h, y2)
+
+        crop = img[y1:y2, x1:x2]
+
+        # Save debug crop so operator can verify the region
+        debug_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "OMR", "debug_qca.png")
+        try:
+            cv2.imwrite(debug_path, crop)
+        except Exception:
+            pass
+
+        if crop.size == 0:
+            return "", 0.0, img[max(0,y1-5):min(h,y2+5), max(0,x1-5):min(w,x2+5)]
+
+        # ── Pre-processing for large bold printed digits ──────────────────────
+        gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+
+        # Upscale 2× — EasyOCR performs better on larger text
+        gray_up = cv2.resize(gray, (gray.shape[1] * 2, gray.shape[0] * 2),
+                             interpolation=cv2.INTER_CUBIC)
+
+        # Otsu threshold on upscaled image
+        _, th = cv2.threshold(gray_up, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # If most pixels are black (inverted scan), flip
+        if np.mean(th) < 127:
+            th = cv2.bitwise_not(th)
+
+        # Slight dilation to thicken thin strokes
+        kernel = np.ones((2, 2), np.uint8)
+        th = cv2.dilate(th, kernel, iterations=1)
+
+        # ── OCR ──────────────────────────────────────────────────────────────
+        reader = get_ocr_reader()
+
+        # Try on processed image first, fallback to raw gray upscaled
+        best_text = ""
+        best_conf = 0.0
+
+        for ocr_input in [th, gray_up]:
+            results = reader.readtext(ocr_input, detail=1,
+                                      allowlist='0123456789',
+                                      paragraph=False,
+                                      width_ths=0.9,
+                                      height_ths=0.5)
+            for (_, text, conf) in results:
+                digits_only = ''.join(filter(str.isdigit, text))
+                if len(digits_only) >= 4 and conf > best_conf:
+                    best_text = digits_only
+                    best_conf = conf
+            if best_text:
+                break
+
+        # Last-resort fallback: grab all digits regardless of confidence
+        if not best_text:
+            results = reader.readtext(gray_up, detail=1, allowlist='0123456789')
+            all_digits = ''.join(filter(str.isdigit, " ".join(r[1] for r in results)))
+            best_text = all_digits
+
+        # ── Debug overlay on original image ──────────────────────────────────
+        debug = img.copy()
+        cv2.rectangle(debug, (x1, y1), (x2, y2), (0, 200, 255), 3)
+        cv2.putText(debug, f"BSN:{best_text}", (x1, max(25, y1 - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 200, 255), 2)
+        crop_debug = debug[max(0, y1 - 10):min(h, y2 + 10),
+                           max(0, x1 - 10):min(w, x2 + 10)]
+
+        return best_text.strip(), round(float(best_conf), 3), crop_debug
     #---------------
     #def display_image_in_label(self, cv_img, tk_label, max_size=(500, 300)):
     #    if cv_img is None or cv_img.size == 0:
@@ -1367,9 +1453,12 @@ class VisualOMRViewerDemo:
             discrepancy,
             discrepancy_detail,
             candidate_signed,
-            invigilator_signed,subject_code, booklet_number
+            invigilator_signed,
+            subject_code,
+            BookletSlNo,
+            omr_threshold
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             result["filename"],
             result["barcode"],
@@ -1381,7 +1470,8 @@ class VisualOMRViewerDemo:
             int(result["cand_signed"]),
             int(result["inv_signed"]),
             result["subject_code"],
-            result["booklet_number"]
+            result.get("BookletSlNo", result.get("booklet_number", "")),
+            result.get("omr_threshold", 0.0)
         ))
         
         conn.commit()
@@ -1448,9 +1538,10 @@ class VisualOMRViewerDemo:
                     INSERT INTO {table_name} (
                         filename, barcode, bubble_regno, handwritten_regno,
                         final_regno, discrepancy, discrepancy_detail,
-                        candidate_signed, invigilator_signed, subject_code, booklet_number
+                        candidate_signed, invigilator_signed, subject_code,
+                        BookletSlNo, omr_threshold
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         res["filename"],
                         res["barcode"],
@@ -1462,7 +1553,8 @@ class VisualOMRViewerDemo:
                         int(res["cand_signed"]),
                         int(res["inv_signed"]),
                         res["subject_code"],
-                        res["booklet_number"]
+                        res.get("BookletSlNo", res.get("booklet_number", "")),
+                        res.get("omr_threshold", 0.0)
                     ))
             
                 except Exception as e:

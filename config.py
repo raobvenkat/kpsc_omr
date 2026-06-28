@@ -32,8 +32,21 @@ STANDARD_OMR_TEMPLATE = {
     # handwritten register number box (y_start, y_end, x_start, x_end)
     "reg_boxes": (330, 430, 960, 1520),
     
-    # printed QCA Booklet Number (y_start, y_end, x_start, x_end)
+    # printed QCA Booklet Number label area (y_start, y_end, x_start, x_end)
     "qca": (780, 870, 1050, 1450),
+    
+    # Booklet Serial Number bubble grid (7 digits, 0-9 rows) — below QCA label, bottom-right
+    # Coordinates at 1654x1080 reference resolution
+    "booklet_bubble_grid": {
+        "cols": 7,
+        "rows": 10,
+        "region": (870, 1080, 1050, 1550),   # (y_start, y_end, x_start, x_end) search region
+        "col_start_offset": 20,
+        "row_start_offset": 15,
+        "col_spacing": 64.0,
+        "row_spacing": 20.0,
+        "sample_radius": 6
+    },
     
     # OMR Bubble Grid Alignment Parameters
     # Target range for the red handwritten boxes contour to establish grid origin
@@ -89,8 +102,21 @@ BLIND_DISABLED_OMR_TEMPLATE = {
     # handwritten register number box (y_start, y_end, x_start, x_end)
     "reg_boxes": (250, 320, 730, 1120),
     
-    # printed QCA Booklet Number (y_start, y_end, x_start, x_end)
+    # printed QCA Booklet Number label area (y_start, y_end, x_start, x_end)
     "qca": (600, 680, 800, 1100),
+    
+    # Booklet Serial Number bubble grid (7 digits, 0-9 rows) — below QCA label, bottom-right
+    # Coordinates at 1200 target_width reference
+    "booklet_bubble_grid": {
+        "cols": 7,
+        "rows": 10,
+        "region": (680, 784, 800, 1150),    # (y_start, y_end, x_start, x_end) search region
+        "col_start_offset": 15,
+        "row_start_offset": 12,
+        "col_spacing": 49.0,
+        "row_spacing": 15.0,
+        "sample_radius": 5
+    },
     
     # OMR Bubble Grid Alignment Parameters
     "handwritten_box_contour": {
