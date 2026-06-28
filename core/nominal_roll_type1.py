@@ -151,6 +151,22 @@ def check_signature_present(crop_img):
     large_components = sum(1 for a in areas if a >= 15)
     return large_components >= 2
 
+def check_invigilator_signature_present(img):
+    """
+    Detects the bottom-left "Sign of the Invigilator" signature using the same
+    ink/component logic as candidate signature detection.
+    """
+    if img is None or img.size == 0:
+        return False
+
+    h, w = img.shape[:2]
+    x0 = int(w * 0.105)
+    x1 = int(w * 0.43)
+    y0 = int(h * 0.862)
+    y1 = int(h * 0.902)
+    crop = img[max(0, y0):min(h, y1), max(0, x0):min(w, x1)]
+    return check_signature_present(crop)
+
 def clean_and_segment_digits(crop_bgr):
     """
     Uses morphology and connected components to isolate handwritten digits in a single open box,
@@ -401,4 +417,5 @@ def process_attendance_sheet1(img_path, reader=None):
         
     # Extract header codes
     header = extract_header_codes(img, reader)
+    header["invigilator_signed"] = int(check_invigilator_signature_present(img))
     return records, header

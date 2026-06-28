@@ -74,6 +74,7 @@ class AttendanceViewerDemo:
         
         self.current_records = []
         self.current_img = None
+        self.current_invigilator_signed = 0
         self.attendance_csv_records = {} # filename -> list of records
         self.current_dir = None
         
@@ -128,6 +129,12 @@ class AttendanceViewerDemo:
             self.header_frame, orient="horizontal", length=180,
             mode="determinate", style="Thin.Horizontal.TProgressbar")
         self.progress.pack(side="left", padx=4)
+
+        self.invigilator_sig_lbl = ttk.Label(
+            self.header_frame, text="Invigilator Signed: -",
+            font=("Segoe UI", 10, "bold"), background="#2b2b36",
+            foreground="#00e676")
+        self.invigilator_sig_lbl.pack(side="left", padx=(18, 5))
         
         lbl_type = ttk.Label(top_frame, text="Sheet Type:", font=("Segoe UI", 11, "bold"), background="#2b2b36")
         lbl_type.pack(side="left", padx=(20, 5))
@@ -213,10 +220,18 @@ class AttendanceViewerDemo:
         details_frame.pack(fill="x", expand=False)
         details_frame.pack_propagate(False)
         
-        self.sig_preview_wrapper = tk.LabelFrame(details_frame, text="Signature Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        self.sig_preview_wrapper.pack(side="left", fill="both", expand=True, padx=10, pady=5)
+        self.signature_preview_frame = tk.Frame(details_frame, bg="#2b2b36")
+        self.signature_preview_frame.pack(side="left", fill="both", expand=True, padx=10, pady=5)
+
+        self.sig_preview_wrapper = tk.LabelFrame(self.signature_preview_frame, text="Candidate Signature Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
+        self.sig_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(0, 3))
         self.sig_preview_lbl = tk.Label(self.sig_preview_wrapper, bg="#2b2b36")
         self.sig_preview_lbl.pack(fill="both", expand=True)
+
+        self.inv_sig_preview_wrapper = tk.LabelFrame(self.signature_preview_frame, text="Invigilator Signature Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
+        self.inv_sig_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(3, 0))
+        self.inv_sig_preview_lbl = tk.Label(self.inv_sig_preview_wrapper, bg="#2b2b36")
+        self.inv_sig_preview_lbl.pack(fill="both", expand=True)
         
         self.reg_preview_wrapper = tk.LabelFrame(details_frame, text="Registration / OMR No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
         self.reg_preview_wrapper.pack(side="left", fill="both", expand=True, padx=10, pady=5)
@@ -256,16 +271,26 @@ class AttendanceViewerDemo:
         else:
             self.image_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
+    def get_invigilator_signature_box(self, w, h):
+        return (
+            int(w * 0.105),
+            int(h * 0.862),
+            int(w * 0.43),
+            int(h * 0.902)
+        )
+
     def on_sheet_type_changed(self):
         self.current_dir = None
         self.current_records = []
         self.current_img = None
+        self.current_invigilator_signed = 0
         self.attendance_csv_records = {}
         self.file_combo["values"] = []
         self.file_combo.set("")
         self.image_canvas.delete("all")
         self.image_canvas.configure(scrollregion=(0, 0, 0, 0))
         self.sig_preview_lbl.config(image="")
+        self.inv_sig_preview_lbl.config(image="")
         self.reg_preview_lbl.config(image="")
         for item in self.tree.get_children():
             self.tree.delete(item)
@@ -273,6 +298,7 @@ class AttendanceViewerDemo:
             self.export_btn.config(state="disabled")
         if hasattr(self, "progress"):
             self.progress["value"] = 0
+        self.invigilator_sig_lbl.config(text="Invigilator Signed: -")
         self.prev_btn.config(state="disabled")
         self.next_btn.config(state="disabled")
         self.status_lbl.config(text="Select a folder to begin", foreground="#ffeb3b")
@@ -329,10 +355,12 @@ class AttendanceViewerDemo:
                 center_code = data.get("center_code", "")
                 subcenter_code = data.get("subcenter_code", "")
                 subject_code = data.get("subject_code", "")
+                invigilator_signed = data.get("invigilator_signed", "")
                 records = data.get("records", [])
                 
                 # Auto-reprocess if loaded CSV data is missing header codes or records
-                if not center_code or not subcenter_code or not subject_code or not records:
+                if (not center_code or not subcenter_code or not subject_code
+                        or not records or invigilator_signed == ""):
                     needs_reprocess = True
                 else:
                     # Also reprocess if OMR/Reg numbers are missing or incomplete (less than 6 digits)
@@ -355,15 +383,18 @@ class AttendanceViewerDemo:
                 center_code = header.get("center_code", "")
                 subcenter_code = header.get("subcenter_code", "")
                 subject_code = header.get("subject_code", "")
+                invigilator_signed = int(header.get("invigilator_signed", 0))
                 
                 self.attendance_csv_records[fname] = {
                     "center_code": center_code,
                     "subcenter_code": subcenter_code,
                     "subject_code": subject_code,
+                    "invigilator_signed": invigilator_signed,
                     "records": records
                 }
                 
             self.current_records = records
+            self.current_invigilator_signed = int(invigilator_signed or 0)
             self.current_y_centers = y_centers
             self.current_shift = shift
             self.is_type1 = is_type1
@@ -375,6 +406,8 @@ class AttendanceViewerDemo:
             self.subcenter_entry.insert(0, subcenter_code)
             self.subject_entry.delete(0, tk.END)
             self.subject_entry.insert(0, subject_code)
+            self.invigilator_sig_lbl.config(
+                text=f"Invigilator Signed: {self.current_invigilator_signed}")
             
             # Update navigation button states
             current_idx = self.file_combo.current()
@@ -421,6 +454,15 @@ class AttendanceViewerDemo:
                 else:
                     # Registration No box
                     cv2.rectangle(annotated, (reg_x0 + shift, yc - 25), (reg_x1 + shift, yc + 25), (255, 255, 0), 2)
+
+            inv_x0, inv_y0, inv_x1, inv_y1 = self.get_invigilator_signature_box(w, h)
+            inv_color = (0, 255, 0) if self.current_invigilator_signed else (0, 0, 255)
+            cv2.rectangle(annotated, (inv_x0, inv_y0), (inv_x1, inv_y1), inv_color, 3)
+            cv2.putText(
+                annotated,
+                f"Invigilator Signed: {self.current_invigilator_signed}",
+                (inv_x0, max(25, inv_y0 - 10)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, inv_color, 2)
                 
             # Display a reduced annotated image in the scrollable viewer.
             self.root.update_idletasks()
@@ -496,12 +538,16 @@ class AttendanceViewerDemo:
             else:
                 sig_crop = self.current_img[yc+40:yc+130, 380+shift : 850+shift]
                 reg_crop = self.current_img[yc-25:yc+25, 760+shift : 950+shift] # Registration No crop for Sheet 2
+
+            h_img, w_img = self.current_img.shape[:2]
+            inv_x0, inv_y0, inv_x1, inv_y1 = self.get_invigilator_signature_box(w_img, h_img)
+            inv_sig_crop = self.current_img[inv_y0:inv_y1, inv_x0:inv_x1]
                 
             self.root.update_idletasks()
 
             def fit_preview(crop, label):
-                max_w = max(label.winfo_width() - 12, 320)
-                max_h = max(label.winfo_height() - 12, 160)
+                max_w = max(label.winfo_width() - 12, 240)
+                max_h = max(label.winfo_height() - 12, 70)
                 if crop.size == 0:
                     return np.zeros((max_h, max_w, 3), dtype=np.uint8)
 
@@ -512,11 +558,15 @@ class AttendanceViewerDemo:
                 return cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
 
             sig_resized = fit_preview(sig_crop, self.sig_preview_lbl)
+            inv_sig_resized = fit_preview(inv_sig_crop, self.inv_sig_preview_lbl)
             reg_resized = fit_preview(reg_crop, self.reg_preview_lbl)
             
             # Display Previews
             self.tk_sig = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(sig_resized, cv2.COLOR_BGR2RGB)))
             self.sig_preview_lbl.config(image=self.tk_sig)
+
+            self.tk_inv_sig = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(inv_sig_resized, cv2.COLOR_BGR2RGB)))
+            self.inv_sig_preview_lbl.config(image=self.tk_inv_sig)
             
             self.tk_reg = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(reg_resized, cv2.COLOR_BGR2RGB)))
             self.reg_preview_lbl.config(image=self.tk_reg)
@@ -557,6 +607,7 @@ class AttendanceViewerDemo:
                 "center_code": self.center_entry.get().strip(),
                 "subcenter_code": self.subcenter_entry.get().strip(),
                 "subject_code": self.subject_entry.get().strip(),
+                "invigilator_signed": int(self.current_invigilator_signed),
                 "records": self.current_records
             }
             self.status_lbl.config(text="Correction saved in memory", foreground="#00e676")
@@ -630,6 +681,7 @@ class AttendanceViewerDemo:
                                 "center_code": row.get("Center Code", ""),
                                 "subcenter_code": row.get("Sub Center Code", ""),
                                 "subject_code": row.get("Subject Code", ""),
+                                "invigilator_signed": row.get("Invigilator Signed", ""),
                                 "records": []
                             }
                         
@@ -658,7 +710,8 @@ class AttendanceViewerDemo:
             writer = csv.writer(f)
             writer.writerow([
                 "Filename", "Center Code", "Sub Center Code", "Subject Code",
-                "Row Number", "Status", "Signature Present", "Registration No", "OMR No"
+                "Invigilator Signed", "Row Number", "Status",
+                "Signature Present", "Registration No", "OMR No"
             ])
             for filename in sorted(self.file_combo["values"]):
                 if filename in self.attendance_csv_records:
@@ -666,6 +719,7 @@ class AttendanceViewerDemo:
                     center_code = data.get("center_code", "")
                     subcenter_code = data.get("subcenter_code", "")
                     subject_code = data.get("subject_code", "")
+                    invigilator_signed = int(data.get("invigilator_signed") or 0)
                     for r in data.get("records", []):
                         reg_no = ""
                         omr_no = ""
@@ -679,6 +733,7 @@ class AttendanceViewerDemo:
                             center_code,
                             subcenter_code,
                             subject_code,
+                            invigilator_signed,
                             r["row_number"],
                             r["status"],
                             "Yes" if r["signature_present"] else "No",
@@ -735,6 +790,7 @@ class AttendanceViewerDemo:
                         "center_code": self.center_entry.get().strip(),
                         "subcenter_code": self.subcenter_entry.get().strip(),
                         "subject_code": self.subject_entry.get().strip(),
+                        "invigilator_signed": int(self.current_invigilator_signed),
                         "records": self.current_records
                     }
             
