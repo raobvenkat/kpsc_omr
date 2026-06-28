@@ -176,11 +176,17 @@ class AttendanceViewerDemo:
         # 2. Main content split pane
         content_frame = tk.Frame(self.root, bg="#1c1c22")
         content_frame.pack(fill="both", expand=True, padx=15, pady=15)
-        
-        # Left Panel: Full Annotated Image
-        self.left_frame = tk.LabelFrame(content_frame, text="Annotated Sheet Viewer", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, width=650)
-        self.left_frame.pack(fill="both", side="left", padx=(0, 10))
-        self.left_frame.pack_propagate(False)
+
+        # Left column: annotated viewer (top) + process status grid (bottom)
+        left_column = tk.Frame(content_frame, bg="#1c1c22", width=650)
+        left_column.pack(fill="both", side="left", padx=(0, 10))
+        left_column.pack_propagate(False)
+
+        self.left_frame = tk.LabelFrame(
+            left_column, text="Annotated Sheet Viewer",
+            bg="#2b2b36", fg="#00e676",
+            font=("Segoe UI", 10, "bold"), bd=1)
+        self.left_frame.pack(fill="both", expand=True, padx=0, pady=(0, 8))
 
         self.image_canvas = tk.Canvas(self.left_frame, bg="#2b2b36", highlightthickness=0)
         self.image_scroll_y = ttk.Scrollbar(self.left_frame, orient="vertical", command=self.image_canvas.yview)
@@ -192,6 +198,10 @@ class AttendanceViewerDemo:
         self.image_scroll_x.pack(side="bottom", fill="x")
         self.image_canvas.pack(side="left", fill="both", expand=True, padx=5, pady=5)
         self.image_canvas.bind("<MouseWheel>", self.on_annotated_image_mousewheel)
+
+        self.build_status_panel(left_column)
+        self._status_iids = {}
+        self._status_state = {}
         
         # Right Panel: Table and crops
         right_frame = tk.Frame(content_frame, bg="#1c1c22")
@@ -275,6 +285,151 @@ class AttendanceViewerDemo:
         self.edit_status = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=14, state="readonly")
         self.edit_status.grid(row=0, column=7, sticky="ew", padx=5, pady=15)
 
+    def build_status_panel(self, parent):
+        status_outer = tk.LabelFrame(
+            parent, text="Sheet Process Status",
+            bg="#2b2b36", fg="#00e676",
+            font=("Segoe UI", 10, "bold"), bd=1, height=210)
+        status_outer.pack(fill="x", side="bottom", padx=0, pady=0)
+        status_outer.pack_propagate(False)
+
+        status_hdr = tk.Frame(status_outer, bg="#2b2b36")
+        status_hdr.pack(fill="x", padx=8, pady=(4, 2))
+
+        tk.Label(
+            status_hdr, text="Summary:",
+            bg="#2b2b36", fg="#ffffff",
+            font=("Segoe UI", 9, "bold"),
+            anchor="w").pack(side="left")
+
+        self.status_summary_lbl = tk.Label(
+            status_hdr, text="",
+            bg="#2b2b36", fg="#888899",
+            font=("Segoe UI", 9),
+            anchor="w")
+        self.status_summary_lbl.pack(side="left", padx=(6, 0))
+
+        grid_frame = tk.Frame(status_outer, bg="#2b2b36")
+        grid_frame.pack(fill="both", expand=True, padx=8, pady=(0, 6))
+
+        cols = ("img", "extracted", "saved_db")
+        self.status_tree = ttk.Treeview(
+            grid_frame, columns=cols, show="headings",
+            height=6, selectmode="browse")
+
+        self.status_tree.heading("img", text="Image")
+        self.status_tree.heading("extracted", text="Extracted")
+        self.status_tree.heading("saved_db", text="Saved to DB")
+        self.status_tree.column("img", width=220, anchor="w", stretch=True)
+        self.status_tree.column("extracted", width=95, anchor="center", stretch=True)
+        self.status_tree.column("saved_db", width=95, anchor="center", stretch=True)
+
+        self.status_tree.tag_configure("ok", background="#1b5e20", foreground="#a5d6a7")
+        self.status_tree.tag_configure("warning", background="#4e2600", foreground="#ffcc80")
+        self.status_tree.tag_configure("error", background="#4e0000", foreground="#ef9a9a")
+        self.status_tree.tag_configure("imported", background="#0d2f5e", foreground="#90caf9")
+        self.status_tree.tag_configure("pending", background="#2a2a3a", foreground="#888899")
+
+        status_scroll = ttk.Scrollbar(grid_frame, orient="vertical", command=self.status_tree.yview)
+        self.status_tree.configure(yscrollcommand=status_scroll.set)
+        status_scroll.pack(side="right", fill="y")
+        self.status_tree.pack(side="left", fill="both", expand=True)
+
+    def _status_icon(self, status):
+        return {"ok": "✔", "warning": "⚠", "error": "✘",
+                "imported": "✔", "pending": "—"}.get(status, "—")
+
+    def _ensure_status_row(self, filename):
+        if not hasattr(self, "status_tree"):
+            return
+        if filename not in self._status_iids:
+            iid = self.status_tree.insert(
+                "", "end",
+                values=(filename, "—", "—"),
+                tags=("pending",))
+            self._status_iids[filename] = iid
+
+    def _extracted_status_from_attendance_data(self, data):
+        if not data:
+            return "error"
+        if not data.get("center_code", "").strip():
+            return "warning"
+        if not data.get("subcenter_code", "").strip():
+            return "warning"
+        if not data.get("subject_code", "").strip():
+            return "warning"
+        records = data.get("records", [])
+        if not records:
+            return "warning"
+        for record in records:
+            reg_omr = str(record.get("reg_omr", "")).strip()
+            if not reg_omr or len(reg_omr) < 6:
+                return "warning"
+            if record.get("status") in ("Double Marked", "Not Marked"):
+                return "warning"
+        return "ok"
+
+    def set_sheet_status(self, filename, extracted=None, saved_db=None):
+        if not hasattr(self, "status_tree"):
+            return
+        self._ensure_status_row(filename)
+        iid = self._status_iids[filename]
+
+        if filename not in self._status_state:
+            self._status_state[filename] = {}
+        if extracted:
+            self._status_state[filename]["extracted"] = extracted
+        if saved_db:
+            self._status_state[filename]["saved_db"] = saved_db
+
+        cur = self.status_tree.item(iid, "values")
+        new_ext = (self._status_icon(extracted) + "  " + extracted.upper()
+                   if extracted else cur[1])
+        new_db = (self._status_icon(saved_db) + "  " + saved_db.upper()
+                  if saved_db else cur[2])
+
+        rank = {"error": 3, "warning": 2, "imported": 1, "ok": 1, "pending": 0}
+        tag = max([extracted or "pending", saved_db or "pending"],
+                  key=lambda s: rank.get(s, 0))
+        if (saved_db or "pending") == "imported":
+            tag = "imported"
+
+        self.status_tree.item(iid, values=(filename, new_ext, new_db), tags=(tag,))
+        self.status_tree.see(iid)
+        self._refresh_status_summary()
+
+    def _refresh_status_summary(self):
+        if not hasattr(self, "status_summary_lbl"):
+            return
+        extracted = imported = errors = 0
+        for state in self._status_state.values():
+            ext = state.get("extracted")
+            db = state.get("saved_db")
+            if ext in ("ok", "warning"):
+                extracted += 1
+            if db == "imported":
+                imported += 1
+            if ext == "error" or db == "error":
+                errors += 1
+        if extracted or imported or errors:
+            self.status_summary_lbl.config(
+                text=(f"Extracted: {extracted}, "
+                      f"Imported to DB: {imported}, "
+                      f"Error Sheets: {errors}"))
+        else:
+            self.status_summary_lbl.config(text="")
+
+    def _init_status_grid(self):
+        if not hasattr(self, "status_tree"):
+            return
+        for iid in self.status_tree.get_children():
+            self.status_tree.delete(iid)
+        self._status_iids = {}
+        self._status_state = {}
+        for fp in self.file_combo["values"]:
+            self._ensure_status_row(os.path.basename(fp))
+        self._refresh_status_summary()
+
     def on_annotated_image_mousewheel(self, event):
         if event.state & 0x0001:
             self.image_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
@@ -325,6 +480,12 @@ class AttendanceViewerDemo:
         self.prev_btn.config(state="disabled")
         self.next_btn.config(state="disabled")
         self.status_lbl.config(text="Select a folder to begin", foreground="#ffeb3b")
+        if hasattr(self, "status_tree"):
+            for iid in self.status_tree.get_children():
+                self.status_tree.delete(iid)
+            self._status_iids = {}
+            self._status_state = {}
+            self._refresh_status_summary()
 
     def process_selected_sheet(self, force_reprocess=False):
         img_path = self.normalize_image_path(self.file_combo.get())
@@ -338,6 +499,7 @@ class AttendanceViewerDemo:
         fname = img_path
         display_name = os.path.basename(img_path)
         self.status_lbl.config(text="Processing... Please wait", foreground="#ffeb3b")
+        self.set_sheet_status(display_name, extracted="pending")
         self.root.update_idletasks()
         
         try:
@@ -491,10 +653,10 @@ class AttendanceViewerDemo:
             # Display a reduced annotated image in the scrollable viewer.
             self.root.update_idletasks()
             canvas_w = max(self.image_canvas.winfo_width() - 24, 480)
-            canvas_h = max(self.image_canvas.winfo_height() - 24, 520)
+            canvas_h = max(self.image_canvas.winfo_height() - 24, 320)
             display_scale = min(
-                0.62,
-                max(0.25, min((canvas_w * 1.05) / w, (canvas_h * 1.35) / h))
+                0.55,
+                max(0.22, min((canvas_w * 1.05) / w, (canvas_h * 1.25) / h))
             )
             display_w = max(1, int(w * display_scale))
             display_h = max(1, int(h * display_scale))
@@ -526,10 +688,14 @@ class AttendanceViewerDemo:
             # Auto-select row 1 in treeview
             if self.tree.get_children():
                 self.tree.selection_set(self.tree.get_children()[0])
-                
+
+            extracted_status = self._extracted_status_from_attendance_data(
+                self.attendance_csv_records.get(fname))
+            self.set_sheet_status(display_name, extracted=extracted_status)
             self.status_lbl.config(text="Processing Completed Successfully", foreground="#00e676")
             
         except Exception as e:
+            self.set_sheet_status(display_name, extracted="error")
             self.status_lbl.config(text=f"Error: {str(e)}", foreground="#ff1744")
             messagebox.showerror("Error", f"An error occurred: {str(e)}")
 
@@ -616,6 +782,7 @@ class AttendanceViewerDemo:
                 if f.lower().endswith(('.jpg', '.jpeg', '.png'))
             ])
             self.file_combo["values"] = files
+            self._init_status_grid()
             if files:
                 self.file_combo.current(0)
                 self.process_selected_sheet()
@@ -762,11 +929,13 @@ class AttendanceViewerDemo:
             saved_count = 0
             skipped_count = 0
             error_count = 0
+            self._init_status_grid()
 
             for idx, fname in enumerate(files, 1):
                 img_path = self.normalize_image_path(fname)
                 display_name = os.path.basename(img_path)
                 self.file_combo.current(idx - 1)
+                self.set_sheet_status(display_name, extracted="pending", saved_db="pending")
                 self.status_lbl.config(
                     text=f"Processing {idx}/{len(files)} - {display_name}",
                     foreground="#ffeb3b")
@@ -776,6 +945,8 @@ class AttendanceViewerDemo:
                     self.process_selected_sheet(force_reprocess=True)
                     if img_path not in self.attendance_csv_records:
                         error_count += 1
+                        self.set_sheet_status(
+                            display_name, extracted="error", saved_db="error")
                         self.log_error_to_mssql(
                             cursor, img_path, sheet_type_label,
                             "Processing completed but no records were produced.")
@@ -783,17 +954,28 @@ class AttendanceViewerDemo:
 
                     processed_count += 1
                     data = self.attendance_csv_records[img_path]
+                    extracted_status = self._extracted_status_from_attendance_data(data)
 
                     if self.sheet_exists_in_db(cursor, table_name, img_path):
                         skipped_count += 1
+                        self.set_sheet_status(
+                            display_name,
+                            extracted=extracted_status,
+                            saved_db="imported")
                         continue
 
                     self.insert_attendance_rows_to_mssql(
                         cursor, img_path, data, is_type1)
                     saved_count += 1
+                    self.set_sheet_status(
+                        display_name,
+                        extracted=extracted_status,
+                        saved_db="imported")
 
                 except Exception as e:
                     error_count += 1
+                    self.set_sheet_status(
+                        display_name, extracted="error", saved_db="error")
                     print(f"Error processing {display_name}: {e}")
                     try:
                         self.log_error_to_mssql(
@@ -807,6 +989,7 @@ class AttendanceViewerDemo:
             conn.commit()
             conn.close()
 
+            self._refresh_status_summary()
             if processed_count > 0 and hasattr(self, "export_btn"):
                 self.export_btn.config(state="normal")
 
