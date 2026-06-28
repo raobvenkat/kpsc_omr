@@ -701,7 +701,7 @@ class VisualOMRViewerDemo:
         self.root.configure(bg="#1a1a22")
 
         # Scale factor relative to 1920-wide display
-        sf = max(0.7, min(1.4, sw / 1920))
+        sf = max(0.8, min(1.5, sw / 1920))
         self._fs = lambda n: max(7, int(n * sf))   # font size
         self._px = lambda n: max(2, int(n * sf))   # pixel gap
 
@@ -741,9 +741,9 @@ class VisualOMRViewerDemo:
         s.configure("Title.TLabel", background=P, foreground=AC,
                     font=("Segoe UI", fs(11), "bold"))
         s.configure("TButton", background=AC, foreground="#fff",
-                    font=("Segoe UI", fs(8), "bold"),
+                    font=("Segoe UI", fs(9), "bold"),
                     borderwidth=0, focuscolor="none",
-                    padding=(px(6), px(3)))
+                    padding=(px(8), px(4)))
         s.map("TButton", background=[("active", self._ACCH), ("disabled", "#44445a")])
         s.configure("TEntry", fieldbackground=EN, foreground=FG,
                     insertcolor=FG, font=("Consolas", fs(9)))
@@ -788,34 +788,35 @@ class VisualOMRViewerDemo:
         BG = self._BG; P = self._PANEL; AC = self._ACCENT; FG = self._FG; FGD = self._FGD
 
         # ── HEADER ROW ─────────────────────────────────────────────────────
-        header = tk.Frame(self.root, bg=P, height=px(38))
+        header = tk.Frame(self.root, bg=P, height=px(46))
         header.pack(fill="x", side="top")
         header.pack_propagate(False)
 
         tk.Label(header,
                  text="OMR ICR OCR Extraction Engine",
                  bg=P, fg=AC,
-                 font=("Segoe UI", fs(15), "bold"),
+                 font=("Segoe UI", fs(18), "bold"),
                  anchor="center").pack(fill="both", expand=True)
 
         # thin accent underline
         tk.Frame(self.root, bg=AC, height=2).pack(fill="x", side="top")
 
         # ── CONTROLS ROW ───────────────────────────────────────────────────
-        top = tk.Frame(self.root, bg="#1e1e2a", height=px(36))
+        top = tk.Frame(self.root, bg="#1e1e2a", height=px(42))
         top.pack(fill="x", side="top")
         top.pack_propagate(False)
 
+        # Left side: image navigation + folder + status + progress
         ttk.Label(top, text="Image:", style="Pan.TLabel",
-                  font=("Segoe UI", fs(8), "bold")).pack(
-                      side="left", padx=(px(10), px(2)))
+                  font=("Segoe UI", fs(9), "bold")).pack(
+                      side="left", padx=(px(10), px(3)))
 
         self.prev_btn = ttk.Button(top, text="◀", width=3,
             command=lambda: self.navigate_sheet(-1), state="disabled")
         self.prev_btn.pack(side="left", padx=px(2))
 
         self.file_combo = ttk.Combobox(top, values=[], state="readonly",
-                                       width=50, font=("Segoe UI", fs(8)))
+                                       width=52, font=("Segoe UI", fs(9)))
         self.file_combo.pack(side="left", padx=px(3))
         self.file_combo.bind("<<ComboboxSelected>>",
                              lambda e: self.process_selected_sheet())
@@ -824,23 +825,24 @@ class VisualOMRViewerDemo:
             command=lambda: self.navigate_sheet(1), state="disabled")
         self.next_btn.pack(side="left", padx=px(2))
 
-        self.All_btn = ttk.Button(top, text="⚙ Process All",
-            command=self.process_all_sheets_to_mssql, width=11)
-        self.All_btn.pack(side="left", padx=px(4))
-
-        ttk.Button(top, text="📂 Folder",
-                   command=self.browse_folder).pack(side="left", padx=px(3))
+        ttk.Button(top, text="📂 Select Folder",
+                   command=self.browse_folder).pack(side="left", padx=px(6))
 
         self.status_lbl = ttk.Label(top, text="Ready",
             style="Pan.TLabel",
-            font=("Segoe UI", fs(8), "italic"),
+            font=("Segoe UI", fs(9), "italic"),
             foreground="#ffeb3b")
         self.status_lbl.pack(side="left", padx=px(8))
 
         self.progress = ttk.Progressbar(
-            top, orient="horizontal", length=px(140), mode="determinate",
+            top, orient="horizontal", length=px(150), mode="determinate",
             style="Thin.Horizontal.TProgressbar")
-        self.progress.pack(side="left", padx=px(3))
+        self.progress.pack(side="left", padx=px(4))
+
+        # Right side: Process All button
+        self.All_btn = ttk.Button(top, text="⚙  Process All",
+            command=self.process_all_sheets_to_mssql, width=14)
+        self.All_btn.pack(side="right", padx=px(12))
 
         # thin separator below controls
         tk.Frame(self.root, bg="#33334a", height=1).pack(fill="x", side="top")
@@ -849,9 +851,9 @@ class VisualOMRViewerDemo:
         content = tk.Frame(self.root, bg=BG)
         content.pack(fill="both", expand=True,
                      padx=px(5), pady=px(4))
-        content.columnconfigure(0, weight=28)
+        content.columnconfigure(0, weight=36)
         content.columnconfigure(1, weight=38)
-        content.columnconfigure(2, weight=34)
+        content.columnconfigure(2, weight=26)
         content.rowconfigure(0, weight=1)
 
         # COL 0 — Original sheet
@@ -1053,6 +1055,35 @@ class VisualOMRViewerDemo:
             command=self.save_corrections)
         self.save_btn.pack(fill="x", padx=px(8), pady=px(6))
 
+        self._sep(self.right_frame)
+
+        # ── Sheet Process Status ───────────────────────────────────────────
+        tk.Label(self.right_frame, text="Sheet Process Status:",
+                 bg=P, fg=FG,
+                 font=("Segoe UI", fs(8), "bold"),
+                 anchor="w").pack(fill="x", padx=px(8), pady=(px(4), px(2)))
+
+        self.status_badge = tk.Label(self.right_frame,
+            text="—  Not Processed",
+            bg="#37374f", fg="#aaaacc",
+            font=("Segoe UI", fs(9), "bold"),
+            anchor="center", pady=px(5), relief="flat")
+        self.status_badge.pack(fill="x", padx=px(8), pady=(0, px(4)))
+
+    # ── Sheet process-status badge ─────────────────────────────────────────
+    # status: "ok" | "error" | "imported" | "warning" | "reset"
+    def set_sheet_status(self, status, detail=""):
+        _map = {
+            "ok":       ("✔  OK",              "#1b5e20", "#a5d6a7"),
+            "warning":  ("⚠  Check Required",  "#e65100", "#ffcc80"),
+            "error":    ("✘  Error",            "#b71c1c", "#ef9a9a"),
+            "imported": ("✔  Imported to DB",   "#0d47a1", "#90caf9"),
+            "reset":    ("—  Not Processed",    "#37374f", "#aaaacc"),
+        }
+        text_pfx, bg, fg = _map.get(status, _map["reset"])
+        text = f"{text_pfx}  —  {detail}" if detail else text_pfx
+        self.status_badge.config(text=text, bg=bg, fg=fg)
+
     def browse_folder(self):
         folder = filedialog.askdirectory(initialdir=self.omr_dir)
         if not folder:
@@ -1116,12 +1147,14 @@ class VisualOMRViewerDemo:
             
         try:
             self.status_lbl.config(text="Processing...", foreground="#ffeb3b")
+            self.set_sheet_status("reset")
             self.root.update_idletasks()
             
             # Run processing
             res = process_single_sheet_for_demo(img_path)
             if res is None:
                 self.status_lbl.config(text="Processing failed", foreground="#ff3d00")
+                self.set_sheet_status("error", "Processing failed")
                 messagebox.showerror("Error", "Processing failed!")
                 return
                 
@@ -1223,6 +1256,17 @@ class VisualOMRViewerDemo:
             else:
                 self.disc_frame.config(bg="#2e7d32")
                 self.disc_lbl.config(text=f"DISCREPANCY STATUS: MATCHED\n{disc_detail}", bg="#2e7d32")
+
+            # Determine sheet process status
+            barcode_ok  = bool(res["barcode"] and res["barcode"] != "Not Detected")
+            regno_ok    = bool(res["final_regno"].strip())
+            if not barcode_ok or not regno_ok:
+                self.set_sheet_status("warning",
+                    "Barcode missing" if not barcode_ok else "RegNo missing")
+            elif has_disc:
+                self.set_sheet_status("warning", "RegNo mismatch")
+            else:
+                self.set_sheet_status("ok", "Extracted")
                 
             # Convert and Display Images — sizes scale with window
             sw = self.root.winfo_screenwidth()
@@ -1243,6 +1287,7 @@ class VisualOMRViewerDemo:
             self.last_loaded_folder = self.omr_dir
         except Exception as e:
             self.status_lbl.config(text="Error processing sheet", foreground="#ff3d00")
+            self.set_sheet_status("error", str(e)[:60])
             import traceback
             traceback.print_exc()
             messagebox.showerror("Execution Error", f"Failed during sheet processing:\n{e}")
@@ -1638,8 +1683,9 @@ class VisualOMRViewerDemo:
         
         conn.commit()
         conn.close()
-        
-    # Update process_all_sheets_to_mssql():
+        # Update badge for the currently displayed sheet
+        if hasattr(self, 'set_sheet_status'):
+            self.set_sheet_status("imported", "Saved to DB")
 
     def process_all_sheets_to_mssql(self):
         if not self.omr_dir or not os.path.exists(self.omr_dir):
