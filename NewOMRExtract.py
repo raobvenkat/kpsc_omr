@@ -549,9 +549,155 @@ def determine_final_regno(bubble_regno, handwritten_regno):
     else:
         return bubble_stripped, True, f'MISMATCH: Bubble={bubble_stripped} HW={hw_stripped}'
 
+def detect_whitener_applied(img, grid_x, grid_y, tpl, scale_x, scale_y,
+                            hw_x0, hw_y0, hw_x1, hw_y1):
+    """
+    Detect correction-fluid (whitener) patches on the bubble grid and
+    handwritten registration regions. Whitener appears as very bright,
+    low-saturation blobs that are locally brighter than surrounding paper.
+    """
+    h, w = img.shape[:2]
+    b_conf = tpl["bubble_grid"]
+    col_start = b_conf["col_start_offset"] * scale_x
+    row_start = b_conf["row_start_offset"] * scale_y
+    col_spacing = b_conf["col_spacing"] * scale_x
+    row_spacing = b_conf["row_spacing"] * scale_y
+
+    regions = []
+    bg_y0 = max(0, int(grid_y + row_start - 15))
+    bg_y1 = min(h, int(grid_y + row_start + 9 * row_spacing + 15))
+    bg_x0 = max(0, int(grid_x + col_start - 15))
+    bg_x1 = min(w, int(grid_x + col_start + 8 * col_spacing + 15))
+    if bg_y1 > bg_y0 and bg_x1 > bg_x0:
+        regions.append(img[bg_y0:bg_y1, bg_x0:bg_x1])
+
+    hy0, hy1 = max(0, hw_y0), min(h, hw_y1)
+    hx0, hx1 = max(0, hw_x0), min(w, hw_x1)
+    if hy1 > hy0 and hx1 > hx0:
+        regions.append(img[hy0:hy1, hx0:hx1])
+
+    min_blob_area = max(60, int(40 * scale_x * scale_y))
+
+    for region in regions:
+        if region.size == 0:
+            continue
+        hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
+        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+        sat = hsv[:, :, 1]
+        val = hsv[:, :, 2]
+
+        local_mean = cv2.GaussianBlur(gray, (31, 31), 0)
+        whitener_mask = (
+            (val >= 248) &
+            (sat <= 25) &
+            (gray.astype(np.int16) > local_mean.astype(np.int16) + 8)
+        ).astype(np.uint8) * 255
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        whitener_mask = cv2.morphologyEx(whitener_mask, cv2.MORPH_OPEN, kernel)
+
+        n_labels, _, stats, _ = cv2.connectedComponentsWithStats(
+            whitener_mask, connectivity=8)
+        for i in range(1, n_labels):
+            if stats[i, cv2.CC_STAT_AREA] >= min_blob_area:
+                return True
+
+    return False
+
 # ──────────────────────────────────────────────────────────
 # MAIN PROCESSING WRAPPER
 # ──────────────────────────────────────────────────────────
+def analyze_sheet_color_mode(img):
+    """
+    Detect whether the scanned sheet contains the original red/magenta print.
+
+    The original colour OMR sheets use red/magenta template ink. If that ink is
+    present across the page, isblack must be 0. Black-and-white scans and any
+    scan without red/magenta template ink must return isblack as 1.
+    """
+    empty_result = {
+        "is_bw": True,
+        "isblack": 1,
+        "avg_sat": 0.0,
+        "color_pixel_ratio": 0.0,
+        "strong_color_ratio": 0.0,
+    }
+    if img is None or img.size == 0:
+        return empty_result.copy()
+
+    if len(img.shape) < 3 or img.shape[2] == 1:
+        return empty_result.copy()
+
+    h, w = img.shape[:2]
+    max_side = 1200
+    sample = img
+    if max(h, w) > max_side:
+        scale = max_side / float(max(h, w))
+        sample = cv2.resize(
+            img, (int(w * scale), int(h * scale)),
+            interpolation=cv2.INTER_AREA)
+
+    hsv = cv2.cvtColor(sample, cv2.COLOR_BGR2HSV)
+    hue = hsv[:, :, 0]
+    sat = hsv[:, :, 1].astype(np.float32)
+    val = hsv[:, :, 2].astype(np.float32)
+
+    valid = (val > 35) & (val < 250)
+    valid_count = int(np.count_nonzero(valid))
+    if valid_count == 0:
+        return empty_result.copy()
+
+    red_hue = (hue <= 14) | (hue >= 166)
+    magenta_hue = (hue >= 135) & (hue <= 174)
+    red_magenta_pixels = (
+        valid &
+        (sat > 45) &
+        (val > 80) &
+        (red_hue | magenta_hue)
+    )
+    strong_red_magenta_pixels = (
+        valid &
+        (sat > 65) &
+        (val > 100) &
+        (red_hue | magenta_hue)
+    )
+
+    red_magenta_mask = red_magenta_pixels.astype(np.uint8)
+    red_magenta_ratio = (
+        np.count_nonzero(red_magenta_mask) / float(red_magenta_mask.size)
+    )
+    strong_red_magenta_ratio = (
+        np.count_nonzero(strong_red_magenta_pixels) /
+        float(red_magenta_mask.size)
+    )
+
+    n_labels, _, stats, _ = cv2.connectedComponentsWithStats(
+        red_magenta_mask, connectivity=8)
+    largest_component_ratio = 0.0
+    if n_labels > 1:
+        largest_component_ratio = (
+            np.max(stats[1:, cv2.CC_STAT_AREA]) / float(red_magenta_mask.size)
+        )
+
+    avg_sat = float(np.mean(sat[valid]))
+
+    has_red_magenta_template = (
+        red_magenta_ratio >= 0.01 or
+        (
+            red_magenta_ratio >= 0.004 and
+            largest_component_ratio >= 0.002
+        ) or
+        strong_red_magenta_ratio >= 0.006
+    )
+
+    return {
+        "is_bw": not has_red_magenta_template,
+        "isblack": 0 if has_red_magenta_template else 1,
+        "avg_sat": round(avg_sat, 2),
+        "color_pixel_ratio": round(float(red_magenta_ratio), 5),
+        "strong_color_ratio": round(float(strong_red_magenta_ratio), 5),
+    }
+
 def process_single_sheet_for_demo(img_path):
     img = cv2.imread(img_path)
     if img is None:
@@ -560,9 +706,10 @@ def process_single_sheet_for_demo(img_path):
     h, w, _ = img.shape
     tpl = get_omr_template(w)
     
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-    avg_sat = np.mean(hsv[:, :, 1])
-    is_bw = avg_sat < 8.0
+    color_mode = analyze_sheet_color_mode(img)
+    avg_sat = color_mode["avg_sat"]
+    is_bw = bool(color_mode["is_bw"])
+    isblack = int(color_mode["isblack"])
     
     h_target = 1080 if tpl["name"] == "standard" else 784
     scale_y = h / h_target
@@ -615,7 +762,14 @@ def process_single_sheet_for_demo(img_path):
     hw_y0 = int(box_cy - box_h//2 - 5)
     hw_y1 = int(box_cy + box_h//2 + 5)
     reg_box_crop = img[max(0, hw_y0):min(h, hw_y1), max(0, hw_x0):min(w, hw_x1)]
-    
+
+    subject_code, subject_crop = VisualOMRViewerDemo.extract_subject_code(None, img, scale_x, scale_y)
+    booklet_sl_no, omr_threshold, booklet_crop = VisualOMRViewerDemo.extract_booklet_number(None, img, scale_x, scale_y)
+
+    # Whitener flag: True when OMR bubble threshold is below 10%, indicating
+    # correction fluid (whitener) may have been applied on the bubble region.
+    whitenerflag = omr_threshold < 10
+
     final_regno, has_disc, disc_detail = determine_final_regno(bubble_regno, handwritten_regno)
     
     # 5. Create Full Annotated Image for Left Panel
@@ -649,14 +803,14 @@ def process_single_sheet_for_demo(img_path):
     cv2.rectangle(full_annotated, (inv_sig_x_start, inv_sig_y_start), (inv_sig_x_end, inv_sig_y_end), (0, 255, 255), 3)
     cv2.putText(full_annotated, "Invigilator Sig", (inv_sig_x_start, max(25, inv_sig_y_start - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
     
-    subject_code, subject_crop = VisualOMRViewerDemo.extract_subject_code(None, img, scale_x, scale_y)
-    booklet_sl_no, omr_threshold, booklet_crop = VisualOMRViewerDemo.extract_booklet_number(None, img, scale_x, scale_y)
-
     return {
         "filename": os.path.basename(img_path),
         "resolution": f"{w}x{h}",
         "avg_sat": round(avg_sat, 2),
         "is_bw": is_bw,
+        "isblack": isblack,
+        "color_pixel_ratio": color_mode["color_pixel_ratio"],
+        "strong_color_ratio": color_mode["strong_color_ratio"],
         "is_padded_bw": is_padded_bw,
         "barcode": barcode_val,
         "bubble_regno": bubble_regno,
@@ -672,6 +826,7 @@ def process_single_sheet_for_demo(img_path):
 
         "has_disc": has_disc,
         "disc_detail": disc_detail,
+        "whitenerflag": whitenerflag,
         "cand_signed": cand_signed,
         "cand_ratio": cand_ratio,
         "inv_signed": inv_signed,
@@ -1342,7 +1497,8 @@ class VisualOMRViewerDemo:
                     "Invigilator Signed": inv_sig,
                     "Subject Code": res.get("subject_code", ""),
                     "BookletSlNo": res.get("BookletSlNo", ""),
-                    "OMRThreshold": str(res.get("omr_threshold", ""))
+                    "OMRThreshold": str(res.get("omr_threshold", "")),
+                    "IsBlack": str(res.get("isblack", ""))
                 }
                 
             # Load into editing inputs
@@ -1379,7 +1535,9 @@ class VisualOMRViewerDemo:
             type_str = ("B&W Padded" if res["is_padded_bw"]
                         else ("Grayscale" if res["is_bw"] else "Color"))
             self.meta_lbl.config(
-                text=f"File: {res['filename']}\nRes: {res['resolution']}  |  {type_str}  |  Sat: {res['avg_sat']}"
+                text=(f"File: {res['filename']}\n"
+                      f"Res: {res['resolution']}  |  {type_str}  |  "
+                      f"Sat: {res['avg_sat']}  |  IsBlack: {res['isblack']}")
             )
             
             # Update Discrepancy Status based on current values
@@ -1446,7 +1604,7 @@ class VisualOMRViewerDemo:
                     "Filename", "Decoded Barcode", "OMR Bubble Reading", 
                     "Handwritten OCR", "Resolved Register No", 
                     "Candidate Signed", "Invigilator Signed", "Subject Code",
-                    "BookletSlNo", "OMRThreshold"
+                    "BookletSlNo", "OMRThreshold", "IsBlack"
                 ])
                 for filename in sorted(self.filenames):
                     # filenames list holds full paths; CSV key is basename
@@ -1463,7 +1621,8 @@ class VisualOMRViewerDemo:
                             row.get("Invigilator Signed", ""),
                             row.get("Subject Code", ""),
                             row.get("BookletSlNo", ""),
-                            row.get("OMRThreshold", "")
+                            row.get("OMRThreshold", ""),
+                            row.get("IsBlack", "")
                         ])
         except Exception as e:
             messagebox.showerror("Error", f"Failed to save CSV database: {e}")
@@ -1497,7 +1656,10 @@ class VisualOMRViewerDemo:
             "Invigilator Signed": inv_sig,
             "Subject Code": self.edit_subject.get().strip(),
             "BookletSlNo": self.edit_booklet.get().strip(),
-            "OMRThreshold": self.edit_booklet_threshold.get().strip()
+            "OMRThreshold": self.edit_booklet_threshold.get().strip(),
+            "IsBlack": str(
+                self.current_omr_res.get("isblack", "")
+                if self.current_omr_res else "")
         }
 
         
@@ -1761,6 +1923,49 @@ class VisualOMRViewerDemo:
         
         result = cursor.fetchone()
         return result[0] == 1
+
+    def check_column_exists(self, conn, table_name, column_name):
+        cursor = conn.cursor()
+        cursor.execute("""
+        SELECT COUNT(*)
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_NAME = ? AND COLUMN_NAME = ?
+        """, (table_name, column_name))
+        result = cursor.fetchone()
+        return result[0] == 1
+
+    def insert_omr_result_row(self, conn, cursor, table_name, result):
+        columns = [
+            "filename", "barcode", "bubble_regno", "handwritten_regno",
+            "final_regno", "discrepancy", "discrepancy_detail",
+            "candidate_signed", "invigilator_signed", "subject_code",
+            "BookletSlNo", "omr_threshold", "whitenerflag"
+        ]
+        values = [
+            result["filename"],
+            result["barcode"],
+            result["bubble_regno"],
+            result["handwritten_regno"],
+            result["final_regno"],
+            int(result["has_disc"]),
+            result["disc_detail"],
+            int(result["cand_signed"]),
+            int(result["inv_signed"]),
+            result["subject_code"],
+            result.get("BookletSlNo", result.get("booklet_number", "")),
+            result.get("omr_threshold", 0.0),
+            int(bool(result.get("whitenerflag", False)))
+        ]
+
+        if self.check_column_exists(conn, table_name, "isblack"):
+            columns.append("isblack")
+            values.append(int(result.get("isblack", 0)))
+
+        placeholders = ", ".join(["?"] * len(columns))
+        column_sql = ", ".join(columns)
+        cursor.execute(
+            f"INSERT INTO {table_name} ({column_sql}) VALUES ({placeholders})",
+            tuple(values))
     #Insert Only If Table Exists
     def insert_into_mssql(self,result):
         conn = self.get_sql_connection()
@@ -1784,37 +1989,7 @@ class VisualOMRViewerDemo:
             return
         
         # ✅ Insert data
-        cursor.execute(f"""
-        INSERT INTO {table_name} (
-            filename,
-            barcode,
-            bubble_regno,
-            handwritten_regno,
-            final_regno,
-            discrepancy,
-            discrepancy_detail,
-            candidate_signed,
-            invigilator_signed,
-            subject_code,
-            BookletSlNo,
-            omr_threshold
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            result["filename"],
-            result["filename"],
-            result["barcode"],
-            result["bubble_regno"],
-            result["handwritten_regno"],
-            result["final_regno"],
-            int(result["has_disc"]),
-            result["disc_detail"],
-            int(result["cand_signed"]),
-            int(result["inv_signed"]),
-            result["subject_code"],
-            result.get("BookletSlNo", result.get("booklet_number", "")),
-            result.get("omr_threshold", 0.0)
-        ))
+        self.insert_omr_result_row(conn, cursor, table_name, result)
         
         conn.commit()
         conn.close()
@@ -1885,28 +2060,7 @@ class VisualOMRViewerDemo:
                             filename, extracted=extracted, saved_db="imported")
                         continue
 
-                    cursor.execute(f"""
-                    INSERT INTO {table_name} (
-                        filename, barcode, bubble_regno, handwritten_regno,
-                        final_regno, discrepancy, discrepancy_detail,
-                        candidate_signed, invigilator_signed, subject_code,
-                        BookletSlNo, omr_threshold
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        res["filename"],
-                        res["barcode"],
-                        res["bubble_regno"],
-                        res["handwritten_regno"],
-                        res["final_regno"],
-                        int(res["has_disc"]),
-                        res["disc_detail"],
-                        int(res["cand_signed"]),
-                        int(res["inv_signed"]),
-                        res["subject_code"],
-                        res.get("BookletSlNo", res.get("booklet_number", "")),
-                        res.get("omr_threshold", 0.0)
-                    ))
+                    self.insert_omr_result_row(conn, cursor, table_name, res)
                     self.set_sheet_status(
                         filename, extracted=extracted, saved_db="imported")
 
