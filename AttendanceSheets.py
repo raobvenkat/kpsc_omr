@@ -72,6 +72,19 @@ class AttendanceViewerDemo:
         self.on_sheet_type_changed()
 
     def build_ui(self):
+        # Header row
+        header = tk.Frame(self.root, bg="#2b2b36", height=46, bd=0)
+        header.pack(fill="x", side="top", padx=0, pady=0)
+        header.pack_propagate(False)
+
+        tk.Label(header,
+                 text="Nominal Roll Engine",
+                 bg="#2b2b36", fg="#00e676",
+                 font=("Segoe UI", 18, "bold"),
+                 anchor="center").pack(fill="both", expand=True)
+
+        tk.Frame(self.root, bg="#00c853", height=2).pack(fill="x", side="top")
+
         # 1. Top Panel (Control Panel)
         top_frame = tk.Frame(self.root, bg="#2b2b36", height=70, bd=0)
         top_frame.pack(fill="x", side="top", padx=0, pady=0)
@@ -134,9 +147,6 @@ class AttendanceViewerDemo:
 
         self.process_all_btn = ttk.Button(top_frame, text="Process All", command=self.process_all_sheets, style="TButton", width=12)
         self.process_all_btn.pack(side="right", padx=5)
-        
-        title_lbl = ttk.Label(top_frame, text="NOMINAL ROLL ENGINE", style="Header.TLabel", background="#2b2b36")
-        title_lbl.pack(side="right", padx=30)
         
         # 2. Main content split pane
         content_frame = tk.Frame(self.root, bg="#1c1c22")
@@ -446,9 +456,22 @@ class AttendanceViewerDemo:
                 sig_crop = self.current_img[yc+40:yc+130, 380+shift : 850+shift]
                 reg_crop = self.current_img[yc-25:yc+25, 760+shift : 950+shift] # Registration No crop for Sheet 2
                 
-            # Resize for preview widgets (uniform 240x90 size for larger display)
-            sig_resized = cv2.resize(sig_crop, (240, 90)) if sig_crop.size > 0 else np.zeros((90, 240, 3), dtype=np.uint8)
-            reg_resized = cv2.resize(reg_crop, (240, 90)) if reg_crop.size > 0 else np.zeros((90, 240, 3), dtype=np.uint8)
+            self.root.update_idletasks()
+
+            def fit_preview(crop, label):
+                max_w = max(label.winfo_width() - 12, 320)
+                max_h = max(label.winfo_height() - 12, 160)
+                if crop.size == 0:
+                    return np.zeros((max_h, max_w, 3), dtype=np.uint8)
+
+                h, w = crop.shape[:2]
+                scale = min(max_w / w, max_h / h)
+                new_w = max(1, int(w * scale))
+                new_h = max(1, int(h * scale))
+                return cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+
+            sig_resized = fit_preview(sig_crop, self.sig_preview_lbl)
+            reg_resized = fit_preview(reg_crop, self.reg_preview_lbl)
             
             # Display Previews
             self.tk_sig = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(sig_resized, cv2.COLOR_BGR2RGB)))
