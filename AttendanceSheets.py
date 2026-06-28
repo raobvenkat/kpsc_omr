@@ -47,6 +47,7 @@ class AttendanceViewerDemo:
         # Style Entry fields for clear contrast
         self.style.configure("TEntry", fieldbackground="#2b2b36", foreground="#ffffff", insertcolor="#ffffff")
         self.style.map("TEntry", fieldbackground=[("readonly", "#1c1c22")], foreground=[("readonly", "#888888")])
+        self.style.configure("Thin.Horizontal.TProgressbar", troughcolor="#2b2b36", background="#00c853", thickness=8)
         
         # Treeview Styles
         self.style.configure("Treeview", background="#2b2b36", foreground="#ffffff", fieldbackground="#2b2b36", rowheight=25)
@@ -141,6 +142,11 @@ class AttendanceViewerDemo:
         
         self.status_lbl = ttk.Label(top_frame, text="Ready", font=("Segoe UI", 10, "italic"), background="#2b2b36", foreground="#ffeb3b")
         self.status_lbl.pack(side="left", padx=20)
+
+        self.progress = ttk.Progressbar(
+            top_frame, orient="horizontal", length=150,
+            mode="determinate", style="Thin.Horizontal.TProgressbar")
+        self.progress.pack(side="left", padx=4)
 
         self.export_btn = ttk.Button(top_frame, text="Export to Excel", command=self.export_results_to_excel, style="TButton", width=16, state="disabled")
         self.export_btn.pack(side="right", padx=(5, 10))
@@ -239,6 +245,8 @@ class AttendanceViewerDemo:
 
         if hasattr(self, "export_btn"):
             self.export_btn.config(state="disabled")
+        if hasattr(self, "progress"):
+            self.progress["value"] = 0
             
         if os.path.exists(self.current_dir):
             self.load_attendance_csv()
@@ -526,6 +534,8 @@ class AttendanceViewerDemo:
             self.current_dir = dir_path
             if hasattr(self, "export_btn"):
                 self.export_btn.config(state="disabled")
+            if hasattr(self, "progress"):
+                self.progress["value"] = 0
             self.load_attendance_csv()
             files = sorted([f for f in os.listdir(self.current_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
             self.file_combo["values"] = files
@@ -543,6 +553,8 @@ class AttendanceViewerDemo:
 
         if hasattr(self, "export_btn"):
             self.export_btn.config(state="disabled")
+        self.progress["value"] = 0
+        self.progress["maximum"] = len(files)
 
         processed_count = 0
         for idx, fname in enumerate(files, 1):
@@ -554,6 +566,8 @@ class AttendanceViewerDemo:
             self.process_selected_sheet(force_reprocess=True)
             if fname in self.attendance_csv_records:
                 processed_count += 1
+            self.progress["value"] = idx
+            self.root.update_idletasks()
 
         if processed_count > 0 and hasattr(self, "export_btn"):
             self.export_btn.config(state="normal")
