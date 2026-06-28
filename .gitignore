@@ -7,3 +7,4 @@ dist/
 local_master.db
 test_output/
 run_pipeline_test.py
+db_config.kpsc

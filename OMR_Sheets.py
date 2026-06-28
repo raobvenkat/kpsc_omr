@@ -1944,13 +1944,8 @@ class VisualOMRViewerDemo:
     #SQL Server Connection
     
     def get_sql_connection(self):
-        return pyodbc.connect(
-            "DRIVER={ODBC Driver 17 for SQL Server};"
-            "SERVER=RAO-PC;"
-            "DATABASE=KPSCOMRICRExtraction;"
-            "UID=kpsc;PWD=qwer"
-        )
-        #return conn
+        from db_credentials import get_sql_connection
+        return get_sql_connection()
 
     #Check for Table exesits
     def check_table_exists(self, conn, table_name):

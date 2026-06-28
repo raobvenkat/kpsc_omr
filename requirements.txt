@@ -5,6 +5,9 @@ easyocr>=1.6.2
 onnxruntime>=1.14.0
 pyzbar>=0.1.9
 openpyxl>=3.1.0
+pyodbc>=4.0.39
 pyinstaller>=5.10.0
-pip install pyodbc
-pip install pytesseract
+
+
+
+#pip install -r requirements.txt
