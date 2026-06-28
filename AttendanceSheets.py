@@ -27,8 +27,15 @@ class AttendanceViewerDemo:
     def __init__(self, root):
         self.root = root
         self.root.title("Attendance Sheet Extraction Demo")
-        self.root.geometry("1450x850")
-        self.root.minsize(1100, 700)
+
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        win_w = int(sw * 0.92)
+        win_h = int(sh * 0.90)
+        self.root.geometry(f"{win_w}x{win_h}+{(sw-win_w)//2}+{(sh-win_h)//2}")
+        self.root.minsize(
+            max(1024, int(sw * 0.65)),
+            max(620, int(sh * 0.62)))
         self.root.configure(bg="#1c1c22") # Sleek premium dark background
         
         # Configure Styles
@@ -202,8 +209,8 @@ class AttendanceViewerDemo:
         self.tree.bind("<<TreeviewSelect>>", self.on_row_selected)
         
         # Details / Crop Frame at Bottom Right
-        details_frame = tk.LabelFrame(right_frame, text="Selected Row Visual Verification Snippets", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, height=360)
-        details_frame.pack(fill="both", expand=True)
+        details_frame = tk.LabelFrame(right_frame, text="Selected Row Visual Verification Snippets", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, height=210)
+        details_frame.pack(fill="x", expand=False)
         details_frame.pack_propagate(False)
         
         self.sig_preview_wrapper = tk.LabelFrame(details_frame, text="Signature Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
@@ -415,8 +422,21 @@ class AttendanceViewerDemo:
                     # Registration No box
                     cv2.rectangle(annotated, (reg_x0 + shift, yc - 25), (reg_x1 + shift, yc + 25), (255, 255, 0), 2)
                 
-            # Display full annotated image in scrollable viewer.
-            color_cvt = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
+            # Display a reduced annotated image in the scrollable viewer.
+            self.root.update_idletasks()
+            canvas_w = max(self.image_canvas.winfo_width() - 24, 480)
+            canvas_h = max(self.image_canvas.winfo_height() - 24, 520)
+            display_scale = min(
+                0.62,
+                max(0.25, min((canvas_w * 1.05) / w, (canvas_h * 1.35) / h))
+            )
+            display_w = max(1, int(w * display_scale))
+            display_h = max(1, int(h * display_scale))
+            annotated_view = cv2.resize(
+                annotated, (display_w, display_h),
+                interpolation=cv2.INTER_AREA)
+
+            color_cvt = cv2.cvtColor(annotated_view, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(color_cvt)
             self.tk_img = ImageTk.PhotoImage(image=pil_img)
             self.image_canvas.delete("all")
