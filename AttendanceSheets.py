@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageTk
 import easyocr
+import pyodbc
 
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -165,7 +166,10 @@ class AttendanceViewerDemo:
         self.export_btn = ttk.Button(top_frame, text="Export to Excel", command=self.export_results_to_excel, style="TButton", width=16, state="disabled")
         self.export_btn.pack(side="right", padx=(5, 10))
 
-        self.process_all_btn = ttk.Button(top_frame, text="Process All", command=self.process_all_sheets, style="TButton", width=12)
+        self.process_all_btn = ttk.Button(
+            top_frame, text="Process All",
+            command=self.process_all_sheets_to_mssql,
+            style="TButton", width=12)
         self.process_all_btn.pack(side="right", padx=5)
         
         # 2. Main content split pane
@@ -245,27 +249,30 @@ class AttendanceViewerDemo:
         correction_frame.pack(fill="x", pady=(10, 0))
         correction_frame.pack_propagate(False)
 
-        # Grid layout for correction widgets (1 row, 7 columns)
-        for col_idx in range(7):
+        # Grid layout for read-only row details
+        for col_idx in range(8):
             correction_frame.columnconfigure(col_idx, weight=1)
 
         lbl_reg = ttk.Label(correction_frame, text="Reg/OMR No:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
         lbl_reg.grid(row=0, column=0, sticky="w", padx=5, pady=15)
         self.edit_reg = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=15)
+        self.edit_reg.config(state="readonly")
         self.edit_reg.grid(row=0, column=1, sticky="ew", padx=5, pady=15)
 
-        lbl_sig = ttk.Label(correction_frame, text="Signature:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
+        lbl_sig = ttk.Label(correction_frame, text="Std. Sign:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
         lbl_sig.grid(row=0, column=2, sticky="w", padx=5, pady=15)
-        self.edit_sig = ttk.Combobox(correction_frame, values=["Yes", "No"], state="readonly", width=8, font=("Segoe UI", 9))
+        self.edit_sig = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=8, state="readonly")
         self.edit_sig.grid(row=0, column=3, sticky="w", padx=5, pady=15)
 
-        lbl_status = ttk.Label(correction_frame, text="Status:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
-        lbl_status.grid(row=0, column=4, sticky="w", padx=5, pady=15)
-        self.edit_status = ttk.Combobox(correction_frame, values=["Present", "Absent", "Not Marked", "Double Marked"], state="readonly", width=12, font=("Segoe UI", 9))
-        self.edit_status.grid(row=0, column=5, sticky="w", padx=5, pady=15)
+        lbl_inv_sig = ttk.Label(correction_frame, text="Inv. Sign:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
+        lbl_inv_sig.grid(row=0, column=4, sticky="w", padx=5, pady=15)
+        self.edit_inv_sig = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=8, state="readonly")
+        self.edit_inv_sig.grid(row=0, column=5, sticky="w", padx=5, pady=15)
 
-        self.apply_btn = ttk.Button(correction_frame, text="Apply Correction", command=self.apply_corrections, style="TButton")
-        self.apply_btn.grid(row=0, column=6, sticky="e", padx=10, pady=15)
+        lbl_status = ttk.Label(correction_frame, text="Status:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
+        lbl_status.grid(row=0, column=6, sticky="w", padx=5, pady=15)
+        self.edit_status = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=14, state="readonly")
+        self.edit_status.grid(row=0, column=7, sticky="ew", padx=5, pady=15)
 
     def on_annotated_image_mousewheel(self, event):
         if event.state & 0x0001:
@@ -280,6 +287,12 @@ class AttendanceViewerDemo:
             int(w * 0.44),
             int(h * 0.922)
         )
+
+    def set_readonly_entry(self, entry, value):
+        entry.config(state="normal")
+        entry.delete(0, tk.END)
+        entry.insert(0, value)
+        entry.config(state="readonly")
 
     def on_sheet_type_changed(self):
         self.current_dir = None
@@ -523,12 +536,17 @@ class AttendanceViewerDemo:
         # Load into editing form
         if self.current_records and row_num < len(self.current_records):
             record = self.current_records[row_num]
-            
-            self.edit_reg.delete(0, tk.END)
-            self.edit_reg.insert(0, record.get("reg_omr", ""))
-            
-            self.edit_sig.set("Yes" if record.get("signature_present") else "No")
-            self.edit_status.set(record.get("status", "Not Marked"))
+
+            self.set_readonly_entry(self.edit_reg, record.get("reg_omr", ""))
+            self.set_readonly_entry(
+                self.edit_sig,
+                "Yes" if record.get("signature_present") else "No")
+            self.set_readonly_entry(
+                self.edit_inv_sig,
+                "Yes" if self.current_invigilator_signed else "No")
+            self.set_readonly_entry(
+                self.edit_status,
+                record.get("status", "Not Marked"))
         
         if self.current_img is not None:
             yc = self.current_y_centers[row_num]
@@ -574,48 +592,6 @@ class AttendanceViewerDemo:
             self.tk_reg = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(reg_resized, cv2.COLOR_BGR2RGB)))
             self.reg_preview_lbl.config(image=self.tk_reg)
 
-    def apply_corrections(self):
-        selected = self.tree.selection()
-        if not selected:
-            messagebox.showwarning("Warning", "No row selected for correction!")
-            return
-            
-        item = self.tree.item(selected[0])
-        row_num = int(item["values"][0]) - 1 # 0-indexed
-        
-        reg_omr_val = self.edit_reg.get().strip()
-        sig_val = self.edit_sig.get()
-        status_val = self.edit_status.get()
-        
-        # Update memory
-        record = self.current_records[row_num]
-        record["reg_omr"] = reg_omr_val
-        record["signature_present"] = (sig_val == "Yes")
-        record["status"] = status_val
-        
-        # Update Treeview row
-        self.tree.item(selected[0], values=(
-            row_num + 1,
-            status_val,
-            sig_val,
-            "Yes" if self.current_invigilator_signed else "No",
-            reg_omr_val
-        ))
-        
-        self.status_lbl.config(text=f"Row {row_num + 1} updated successfully", foreground="#ffeb3b")
-        
-        # Save to database CSV
-        fname = self.file_combo.get()
-        if fname:
-            self.attendance_csv_records[fname] = {
-                "center_code": self.center_entry.get().strip(),
-                "subcenter_code": self.subcenter_entry.get().strip(),
-                "subject_code": self.subject_entry.get().strip(),
-                "invigilator_signed": int(self.current_invigilator_signed),
-                "records": self.current_records
-            }
-            self.status_lbl.config(text="Correction saved in memory", foreground="#00e676")
-
     def browse_folder(self):
         dir_path = filedialog.askdirectory()
         if dir_path:
@@ -633,39 +609,209 @@ class AttendanceViewerDemo:
             else:
                 self.file_combo.set("")
 
-    def process_all_sheets(self):
+    def get_sql_connection(self):
+        return pyodbc.connect(
+            "DRIVER={ODBC Driver 17 for SQL Server};"
+            "SERVER=RAO-PC;"
+            "DATABASE=KPSCOMRICRExtraction;"
+            "UID=kpsc;PWD=qwer"
+        )
+
+    def check_table_exists(self, conn, table_name):
+        cursor = conn.cursor()
+        cursor.execute("""
+        SELECT COUNT(*)
+        FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_NAME = ?
+        """, (table_name,))
+        return cursor.fetchone()[0] == 1
+
+    def sheet_exists_in_db(self, cursor, table_name, filename):
+        cursor.execute(
+            f"SELECT COUNT(*) FROM {table_name} WHERE filename = ?",
+            (filename,))
+        return cursor.fetchone()[0] > 0
+
+    def log_error_to_mssql(self, cursor, filename, sheet_type, error_message):
+        cursor.execute("""
+            EXEC sp_insert_attendance_error_log
+                @source_module = ?,
+                @sheet_type = ?,
+                @filename = ?,
+                @error_message = ?
+        """, (
+            "AttendanceSheets",
+            sheet_type,
+            filename,
+            str(error_message)[:4000],
+        ))
+
+    def insert_attendance_rows_to_mssql(self, cursor, filename, data, is_type1):
+        center_code = data.get("center_code", "")
+        subcenter_code = data.get("subcenter_code", "")
+        subject_code = data.get("subject_code", "")
+        invigilator_signed = int(data.get("invigilator_signed") or 0)
+
+        for record in data.get("records", []):
+            row_number = int(record.get("row_number", 0))
+            status = record.get("status", "Not Marked")
+            signature_present = 1 if record.get("signature_present") else 0
+            reg_omr = record.get("reg_omr", "")
+
+            if is_type1:
+                cursor.execute("""
+                    EXEC sp_insert_attendance_sheet_data_1
+                        @filename = ?,
+                        @center_code = ?,
+                        @subcenter_code = ?,
+                        @subject_code = ?,
+                        @invigilator_signed = ?,
+                        @row_number = ?,
+                        @status = ?,
+                        @signature_present = ?,
+                        @omr_no = ?
+                """, (
+                    filename,
+                    center_code,
+                    subcenter_code,
+                    subject_code,
+                    invigilator_signed,
+                    row_number,
+                    status,
+                    signature_present,
+                    reg_omr,
+                ))
+            else:
+                cursor.execute("""
+                    EXEC sp_insert_attendance_sheet_data2
+                        @filename = ?,
+                        @center_code = ?,
+                        @subcenter_code = ?,
+                        @subject_code = ?,
+                        @invigilator_signed = ?,
+                        @row_number = ?,
+                        @status = ?,
+                        @signature_present = ?,
+                        @registration_no = ?
+                """, (
+                    filename,
+                    center_code,
+                    subcenter_code,
+                    subject_code,
+                    invigilator_signed,
+                    row_number,
+                    status,
+                    signature_present,
+                    reg_omr,
+                ))
+
+    def process_all_sheets_to_mssql(self):
         files = list(self.file_combo["values"])
         if not files:
             messagebox.showwarning("Warning", "No images found to process!")
             return
 
-        if hasattr(self, "export_btn"):
-            self.export_btn.config(state="disabled")
-        self.progress["value"] = 0
-        self.progress["maximum"] = len(files)
+        if not self.current_dir or not os.path.exists(self.current_dir):
+            messagebox.showerror("Error", "Invalid folder path!")
+            return
 
-        processed_count = 0
-        for idx, fname in enumerate(files, 1):
-            self.file_combo.current(idx - 1)
+        choice = self.type_combo.get()
+        is_type1 = "Sheet 1" in choice
+        table_name = "attendance_sheet_data_1" if is_type1 else "attendance_sheet_data2"
+        sheet_type_label = "Attendance Sheet 1 (OMR)" if is_type1 else "Attendance Sheet 2 (QCAB)"
+
+        try:
+            conn = self.get_sql_connection()
+            cursor = conn.cursor()
+
+            if not self.check_table_exists(conn, table_name):
+                messagebox.showerror(
+                    "Error",
+                    f"Table '{table_name}' does not exist. "
+                    "Run sql/attendance_sheets_schema.sql in SSMS first.")
+                conn.close()
+                return
+
+            if not self.check_table_exists(conn, "error_log"):
+                messagebox.showerror(
+                    "Error",
+                    "Table 'error_log' does not exist. "
+                    "Run sql/attendance_sheets_schema.sql in SSMS first.")
+                conn.close()
+                return
+
+            if hasattr(self, "export_btn"):
+                self.export_btn.config(state="disabled")
+            self.progress["value"] = 0
+            self.progress["maximum"] = len(files)
+
+            processed_count = 0
+            saved_count = 0
+            skipped_count = 0
+            error_count = 0
+
+            for idx, fname in enumerate(files, 1):
+                img_path = os.path.abspath(os.path.join(self.current_dir, fname))
+                self.file_combo.current(idx - 1)
+                self.status_lbl.config(
+                    text=f"Processing {idx}/{len(files)} - {fname}",
+                    foreground="#ffeb3b")
+                self.root.update_idletasks()
+
+                try:
+                    self.process_selected_sheet(force_reprocess=True)
+                    if fname not in self.attendance_csv_records:
+                        error_count += 1
+                        self.log_error_to_mssql(
+                            cursor, img_path, sheet_type_label,
+                            "Processing completed but no records were produced.")
+                        continue
+
+                    processed_count += 1
+                    data = self.attendance_csv_records[fname]
+
+                    if self.sheet_exists_in_db(cursor, table_name, img_path):
+                        skipped_count += 1
+                        continue
+
+                    self.insert_attendance_rows_to_mssql(
+                        cursor, img_path, data, is_type1)
+                    saved_count += 1
+
+                except Exception as e:
+                    error_count += 1
+                    print(f"Error processing {fname}: {e}")
+                    try:
+                        self.log_error_to_mssql(
+                            cursor, img_path, sheet_type_label, str(e))
+                    except Exception as log_err:
+                        print(f"Failed to write error_log for {fname}: {log_err}")
+
+                self.progress["value"] = idx
+                self.root.update_idletasks()
+
+            conn.commit()
+            conn.close()
+
+            if processed_count > 0 and hasattr(self, "export_btn"):
+                self.export_btn.config(state="normal")
+
             self.status_lbl.config(
-                text=f"Processing {idx}/{len(files)} - {fname}",
-                foreground="#ffeb3b")
-            self.root.update_idletasks()
-            self.process_selected_sheet(force_reprocess=True)
-            if fname in self.attendance_csv_records:
-                processed_count += 1
-            self.progress["value"] = idx
-            self.root.update_idletasks()
+                text=(
+                    f"Processed {processed_count}/{len(files)} | "
+                    f"Saved {saved_count} | Skipped {skipped_count} | Errors {error_count}"
+                ),
+                foreground="#00e676")
+            messagebox.showinfo(
+                "Success",
+                f"Processed: {processed_count}/{len(files)}\n"
+                f"Saved to DB: {saved_count}\n"
+                f"Skipped (already in DB): {skipped_count}\n"
+                f"Errors logged: {error_count}\n\n"
+                "Use Export to Excel to save a CSV copy.")
 
-        if processed_count > 0 and hasattr(self, "export_btn"):
-            self.export_btn.config(state="normal")
-
-        self.status_lbl.config(
-            text=f"Processed {processed_count}/{len(files)} sheets",
-            foreground="#00e676")
-        messagebox.showinfo(
-            "Success",
-            "All sheets processed. Use Export to Excel to save the file.")
+        except Exception as e:
+            messagebox.showerror("Database Error", str(e))
 
     def load_attendance_csv(self):
         self.attendance_csv_records = {}
