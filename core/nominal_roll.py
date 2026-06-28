@@ -2,6 +2,33 @@ import os
 import cv2
 import numpy as np
 
+# Footer invigilator ROI boxes calibrated from reference scans.
+# Sheet 1 (OMR): "Sign of the Invigilator" signature cell.
+# Sheet 2 (QCAB): "Name of the Invigilator" entry cell.
+INVIGILATOR_BOX_TYPE1 = {
+    "x0_pct": 0.190,
+    "x1_pct": 0.362,
+    "y0_pct": 0.902,
+    "y1_pct": 0.932,
+}
+INVIGILATOR_BOX_TYPE2 = {
+    "x0_pct": 0.166,
+    "x1_pct": 0.422,
+    "y0_pct": 0.905,
+    "y1_pct": 0.927,
+}
+
+
+def get_invigilator_signature_box(sheet_type, w, h):
+    """Return (x0, y0, x1, y1) pixel bounds for invigilator ink detection."""
+    box = INVIGILATOR_BOX_TYPE1 if sheet_type == 1 else INVIGILATOR_BOX_TYPE2
+    return (
+        int(w * box["x0_pct"]),
+        int(h * box["y0_pct"]),
+        int(w * box["x1_pct"]),
+        int(h * box["y1_pct"]),
+    )
+
 def check_ink_present(crop_img, threshold=190, ratio_threshold=0.001):
     """
     Checks if ink is present in a signature crop from the nominal roll.

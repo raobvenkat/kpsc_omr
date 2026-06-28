@@ -15,6 +15,7 @@ import pyodbc
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from core.nominal_roll_type1 import process_attendance_sheet1
 from core.nominal_roll_type2 import process_attendance_sheet2
+from core.nominal_roll import get_invigilator_signature_box as invigilator_box_coords
 
 # Initialize EasyOCR Reader globally once
 _READER = None
@@ -145,8 +146,8 @@ class AttendanceViewerDemo:
         self.type_combo.pack(side="left", padx=10)
         self.type_combo.bind("<<ComboboxSelected>>", lambda e: self.on_sheet_type_changed())
         
-        lbl_file = ttk.Label(top_frame, text="Select Image:", font=("Segoe UI", 11, "bold"), background="#2b2b36")
-        lbl_file.pack(side="left", padx=(20, 5))
+        # lbl_file = ttk.Label(top_frame, text="Select Image:", font=("Segoe UI", 11, "bold"), background="#2b2b36")
+        # lbl_file.pack(side="left", padx=(20, 5))
         
         browse_btn = ttk.Button(top_frame, text="Select Folder...", command=self.browse_folder, style="TButton")
         browse_btn.pack(side="left", padx=5)
@@ -154,7 +155,7 @@ class AttendanceViewerDemo:
         self.prev_btn = ttk.Button(top_frame, text="<- Prev", command=lambda: self.navigate_sheet(-1), style="TButton", width=8, state="disabled")
         self.prev_btn.pack(side="left", padx=2)
         
-        self.file_combo = ttk.Combobox(top_frame, state="readonly", width=20, font=("Segoe UI", 10))
+        self.file_combo = ttk.Combobox(top_frame, state="readonly", width=60, font=("Segoe UI", 10))
         self.file_combo.pack(side="left", padx=5)
         self.file_combo.bind("<<ComboboxSelected>>", lambda e: self.process_selected_sheet())
         
@@ -280,19 +281,26 @@ class AttendanceViewerDemo:
         else:
             self.image_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
-    def get_invigilator_signature_box(self, w, h):
-        return (
-            int(w * 0.10),
-            int(h * 0.895),
-            int(w * 0.44),
-            int(h * 0.922)
-        )
+    def get_invigilator_signature_box(self, w, h, is_type1=None):
+        if is_type1 is None:
+            is_type1 = getattr(self, "is_type1", True)
+        sheet_type = 1 if is_type1 else 2
+        return invigilator_box_coords(sheet_type, w, h)
 
     def set_readonly_entry(self, entry, value):
         entry.config(state="normal")
         entry.delete(0, tk.END)
         entry.insert(0, value)
         entry.config(state="readonly")
+
+    def normalize_image_path(self, path_value):
+        if not path_value:
+            return ""
+        if os.path.isabs(path_value):
+            return os.path.abspath(path_value)
+        if self.current_dir:
+            return os.path.abspath(os.path.join(self.current_dir, path_value))
+        return os.path.abspath(path_value)
 
     def on_sheet_type_changed(self):
         self.current_dir = None
@@ -319,15 +327,16 @@ class AttendanceViewerDemo:
         self.status_lbl.config(text="Select a folder to begin", foreground="#ffeb3b")
 
     def process_selected_sheet(self, force_reprocess=False):
-        fname = self.file_combo.get()
-        if not fname:
+        img_path = self.normalize_image_path(self.file_combo.get())
+        if not img_path:
             messagebox.showwarning("Warning", "No image selected!")
             return
         if not self.current_dir:
             messagebox.showwarning("Warning", "Please select a folder first!")
             return
-            
-        img_path = os.path.join(self.current_dir, fname)
+
+        fname = img_path
+        display_name = os.path.basename(img_path)
         self.status_lbl.config(text="Processing... Please wait", foreground="#ffeb3b")
         self.root.update_idletasks()
         
@@ -601,7 +610,11 @@ class AttendanceViewerDemo:
             if hasattr(self, "progress"):
                 self.progress["value"] = 0
             self.load_attendance_csv()
-            files = sorted([f for f in os.listdir(self.current_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+            files = sorted([
+                os.path.abspath(os.path.join(self.current_dir, f))
+                for f in os.listdir(self.current_dir)
+                if f.lower().endswith(('.jpg', '.jpeg', '.png'))
+            ])
             self.file_combo["values"] = files
             if files:
                 self.file_combo.current(0)
@@ -751,16 +764,17 @@ class AttendanceViewerDemo:
             error_count = 0
 
             for idx, fname in enumerate(files, 1):
-                img_path = os.path.abspath(os.path.join(self.current_dir, fname))
+                img_path = self.normalize_image_path(fname)
+                display_name = os.path.basename(img_path)
                 self.file_combo.current(idx - 1)
                 self.status_lbl.config(
-                    text=f"Processing {idx}/{len(files)} - {fname}",
+                    text=f"Processing {idx}/{len(files)} - {display_name}",
                     foreground="#ffeb3b")
                 self.root.update_idletasks()
 
                 try:
                     self.process_selected_sheet(force_reprocess=True)
-                    if fname not in self.attendance_csv_records:
+                    if img_path not in self.attendance_csv_records:
                         error_count += 1
                         self.log_error_to_mssql(
                             cursor, img_path, sheet_type_label,
@@ -768,7 +782,7 @@ class AttendanceViewerDemo:
                         continue
 
                     processed_count += 1
-                    data = self.attendance_csv_records[fname]
+                    data = self.attendance_csv_records[img_path]
 
                     if self.sheet_exists_in_db(cursor, table_name, img_path):
                         skipped_count += 1
@@ -780,12 +794,12 @@ class AttendanceViewerDemo:
 
                 except Exception as e:
                     error_count += 1
-                    print(f"Error processing {fname}: {e}")
+                    print(f"Error processing {display_name}: {e}")
                     try:
                         self.log_error_to_mssql(
                             cursor, img_path, sheet_type_label, str(e))
                     except Exception as log_err:
-                        print(f"Failed to write error_log for {fname}: {log_err}")
+                        print(f"Failed to write error_log for {display_name}: {log_err}")
 
                 self.progress["value"] = idx
                 self.root.update_idletasks()
@@ -825,6 +839,7 @@ class AttendanceViewerDemo:
                         filename = row.get("Filename")
                         if not filename:
                             continue
+                        filename = self.normalize_image_path(filename)
                             
                         if filename not in self.attendance_csv_records:
                             self.attendance_csv_records[filename] = {
@@ -864,6 +879,7 @@ class AttendanceViewerDemo:
                 "Signature Present", "Registration No", "OMR No"
             ])
             for filename in sorted(self.file_combo["values"]):
+                filename = self.normalize_image_path(filename)
                 if filename in self.attendance_csv_records:
                     data = self.attendance_csv_records[filename]
                     center_code = data.get("center_code", "")
@@ -918,7 +934,7 @@ class AttendanceViewerDemo:
             messagebox.showerror("Error", f"Failed to export results: {e}")
 
     def on_header_changed(self):
-        fname = self.file_combo.get()
+        fname = self.normalize_image_path(self.file_combo.get())
         if fname and fname in self.attendance_csv_records:
             self.attendance_csv_records[fname]["center_code"] = self.center_entry.get().strip()
             self.attendance_csv_records[fname]["subcenter_code"] = self.subcenter_entry.get().strip()
@@ -934,7 +950,7 @@ class AttendanceViewerDemo:
         if 0 <= new_idx < len(self.file_combo["values"]):
             # Auto-save changes of current sheet first
             if self.current_records:
-                fname = self.file_combo.get()
+                fname = self.normalize_image_path(self.file_combo.get())
                 if fname:
                     self.attendance_csv_records[fname] = {
                         "center_code": self.center_entry.get().strip(),

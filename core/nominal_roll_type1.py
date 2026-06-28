@@ -4,6 +4,7 @@ import numpy as np
 import onnxruntime as ort
 import easyocr
 import re
+from core.nominal_roll import get_invigilator_signature_box
 
 # Load ONNX MNIST Model
 _MODEL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "mnist-8.onnx")
@@ -160,10 +161,7 @@ def check_invigilator_signature_present(img):
         return False
 
     h, w = img.shape[:2]
-    x0 = int(w * 0.10)
-    x1 = int(w * 0.44)
-    y0 = int(h * 0.895)
-    y1 = int(h * 0.922)
+    x0, y0, x1, y1 = get_invigilator_signature_box(1, w, h)
     crop = img[max(0, y0):min(h, y1), max(0, x0):min(w, x1)]
     return check_signature_present(crop)
 

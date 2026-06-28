@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 import easyocr
 import re
+from core.nominal_roll import get_invigilator_signature_box
 
 def detect_left_border(img, expected_x=133):
     """
@@ -102,17 +103,13 @@ def check_signature_present(crop_img):
 
 def check_invigilator_signature_present(img):
     """
-    Detects the bottom-left "Sign of the Invigilator" signature using the same
-    ink/component logic as candidate signature detection.
+    Detects the "Name of the Invigilator" entry cell on QCAB attendance sheets.
     """
     if img is None or img.size == 0:
         return False
 
     h, w = img.shape[:2]
-    x0 = int(w * 0.10)
-    x1 = int(w * 0.44)
-    y0 = int(h * 0.895)
-    y1 = int(h * 0.922)
+    x0, y0, x1, y1 = get_invigilator_signature_box(2, w, h)
     crop = img[max(0, y0):min(h, y1), max(0, x0):min(w, x1)]
     return check_signature_present(crop)
 
