@@ -156,13 +156,13 @@ class AttendanceViewerDemo:
         
         # Table Frame
         table_frame = tk.LabelFrame(right_frame, text="Extracted Nominal Roll Table", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1)
-        table_frame.pack(fill="both", expand=True, pady=(0, 10))
+        table_frame.pack(fill="x", expand=False, pady=(0, 10))
         
         # Scrollbars for Treeview
         tree_scroll_y = ttk.Scrollbar(table_frame, orient="vertical")
         tree_scroll_y.pack(side="right", fill="y")
         
-        self.tree = ttk.Treeview(table_frame, columns=("row", "status", "sig", "reg_omr"), show="headings", yscrollcommand=tree_scroll_y.set)
+        self.tree = ttk.Treeview(table_frame, columns=("row", "status", "sig", "reg_omr"), show="headings", yscrollcommand=tree_scroll_y.set, height=6)
         tree_scroll_y.config(command=self.tree.yview)
         
         self.tree.heading("row", text="Row")
@@ -174,12 +174,12 @@ class AttendanceViewerDemo:
         self.tree.column("status", width=120, anchor="center")
         self.tree.column("sig", width=120, anchor="center")
         self.tree.column("reg_omr", width=200, anchor="center")
-        self.tree.pack(fill="both", expand=True, padx=5, pady=5)
+        self.tree.pack(fill="x", expand=False, padx=5, pady=5)
         self.tree.bind("<<TreeviewSelect>>", self.on_row_selected)
         
         # Details / Crop Frame at Bottom Right
-        details_frame = tk.LabelFrame(right_frame, text="Selected Row Visual Verification Snippets", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, height=180)
-        details_frame.pack(fill="x")
+        details_frame = tk.LabelFrame(right_frame, text="Selected Row Visual Verification Snippets", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, height=360)
+        details_frame.pack(fill="both", expand=True)
         details_frame.pack_propagate(False)
         
         self.sig_preview_wrapper = tk.LabelFrame(details_frame, text="Signature Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
