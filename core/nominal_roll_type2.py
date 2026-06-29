@@ -4,6 +4,33 @@ import numpy as np
 import easyocr
 import re
 from core.nominal_roll import get_invigilator_signature_box
+from core.nominal_roll_type1 import read_registration_number
+
+QCAB_X0 = 1180
+QCAB_X1 = 1490
+
+
+def read_qcab_serial_number(crop_bgr, reader):
+    """Read the printed QCAB serial number; return blank for an empty field."""
+    if crop_bgr is None or crop_bgr.size == 0:
+        return ""
+
+    gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
+    enlarged = cv2.resize(gray, None, fx=3.0, fy=3.0,
+                          interpolation=cv2.INTER_CUBIC)
+    _, thresholded = cv2.threshold(
+        enlarged, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+    candidates = []
+    for source in (enlarged, thresholded):
+        for _, text, confidence in reader.readtext(
+                source, detail=1, allowlist="0123456789", paragraph=False):
+            digits = "".join(ch for ch in text if ch.isdigit())
+            if 6 <= len(digits) <= 12:
+                candidates.append((float(confidence), digits))
+
+    return max(candidates, key=lambda item: (item[0], len(item[1])),
+               default=(0.0, ""))[1]
 
 def detect_left_border(img, expected_x=133):
     """
@@ -234,24 +261,19 @@ def process_attendance_sheet2(img_path, reader=None):
             status = "Not Marked"
             
         # C. Registration No OCR (yc-20 to yc+20) - pre-printed
-        reg_crop = img[yc-20:yc+20, reg_x0+shift : reg_x1+shift]
-        registration_no = ""
-        if reg_crop.size > 0:
-            # Upscale 2x with cubic interpolation for 100% accuracy on printed text
-            reg_crop_large = cv2.resize(reg_crop, (0,0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-            reg_txt = reader.readtext(reg_crop_large, detail=0, allowlist="0123456789")
-            if reg_txt:
-                joined = "".join(reg_txt).strip()
-                digits = "".join(c for c in joined if c.isdigit())
-                if len(digits) >= 6:
-                    registration_no = digits
+        reg_crop = img[yc-5:yc+45, reg_x0+shift : reg_x1+shift]
+        registration_no = read_registration_number(reg_crop, reader)
+
+        qcab_crop = img[yc-5:yc+45, QCAB_X0+shift : QCAB_X1+shift]
+        qcab_serial_no = read_qcab_serial_number(qcab_crop, reader)
         
         records.append({
             "row_number": idx + 1,
             "status": status,
             "signature_present": signature_present,
             "registration_no": registration_no,
-            "omr_no": ""
+            "omr_no": "",
+            "qcab_serial_no": qcab_serial_no
         })
         
     # Extract header codes

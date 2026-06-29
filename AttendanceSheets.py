@@ -277,8 +277,8 @@ class AttendanceViewerDemo:
         self.edit_reg.config(state="readonly")
         self.edit_reg.grid(row=0, column=1, sticky="ew", padx=5, pady=15)
 
-        lbl_omr = ttk.Label(correction_frame, text="OMR No:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
-        lbl_omr.grid(row=0, column=2, sticky="w", padx=5, pady=15)
+        self.number_field_lbl = ttk.Label(correction_frame, text="OMR No:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
+        self.number_field_lbl.grid(row=0, column=2, sticky="w", padx=5, pady=15)
         self.edit_omr = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=12)
         self.edit_omr.config(state="readonly")
         self.edit_omr.grid(row=0, column=3, sticky="ew", padx=5, pady=15)
@@ -382,7 +382,8 @@ class AttendanceViewerDemo:
                 if not reg_val or len(reg_val) < 6 or not omr_val or len(omr_val) < 6:
                     return "warning"
             else:
-                if not reg_val or len(reg_val) < 6:
+                qcab_val = str(record.get("qcab_serial_no", "")).strip()
+                if not reg_val or len(reg_val) < 6 or (qcab_val and len(qcab_val) < 6):
                     return "warning"
             if record.get("status") in ("Double Marked", "Not Marked"):
                 return "warning"
@@ -477,6 +478,11 @@ class AttendanceViewerDemo:
         return os.path.abspath(path_value)
 
     def on_sheet_type_changed(self):
+        is_type1 = "Sheet 1" in self.type_combo.get()
+        number_title = "OMR No" if is_type1 else "QCAB Serial No"
+        self.tree.heading("omr_no", text=number_title)
+        self.omr_preview_wrapper.config(text=f"{number_title} Crop")
+        self.number_field_lbl.config(text=f"{number_title}:")
         self.current_dir = None
         self.current_records = []
         self.current_img = None
@@ -553,6 +559,7 @@ class AttendanceViewerDemo:
                 px_offset, ax_offset = 469, 524
                 sig_x0, sig_x1 = 380, 850
                 reg_x0, reg_x1 = 760, 950
+                qcab_x0, qcab_x1 = 1180, 1490
                 
             # Load from CSV database or process
             needs_reprocess = False
@@ -578,7 +585,10 @@ class AttendanceViewerDemo:
                                 needs_reprocess = True
                                 break
                         else:
-                            if not reg_val or len(reg_val) < 6:
+                            qcab_val = str(r.get("qcab_serial_no", "")).strip()
+                            if (not data.get("has_qcab_column", True)
+                                    or not reg_val or len(reg_val) < 6
+                                    or (qcab_val and len(qcab_val) < 6)):
                                 needs_reprocess = True
                                 break
             else:
@@ -603,6 +613,7 @@ class AttendanceViewerDemo:
                     "subcenter_code": subcenter_code,
                     "subject_code": subject_code,
                     "invigilator_signed": invigilator_signed,
+                    "has_qcab_column": True,
                     "records": records
                 }
                 
@@ -667,8 +678,9 @@ class AttendanceViewerDemo:
                     # OMR No box (cyan)
                     cv2.rectangle(annotated, (omr_x0 + shift, yc - 25), (omr_x1 + shift, yc + 25), (0, 255, 255), 2)
                 else:
-                    # Registration No box
+                    # Registration No and QCAB Serial No boxes
                     cv2.rectangle(annotated, (reg_x0 + shift, yc - 25), (reg_x1 + shift, yc + 25), (255, 255, 0), 2)
+                    cv2.rectangle(annotated, (qcab_x0 + shift, yc - 5), (qcab_x1 + shift, yc + 45), (0, 255, 255), 2)
 
             inv_x0, inv_y0, inv_x1, inv_y1 = self.get_invigilator_signature_box(w, h)
             inv_color = (0, 255, 0) if self.current_invigilator_signed else (0, 0, 255)
@@ -712,7 +724,8 @@ class AttendanceViewerDemo:
                     "Yes" if r["signature_present"] else "No",
                     "Yes" if self.current_invigilator_signed else "No",
                     r.get("registration_no", ""),
-                    r.get("omr_no", "")
+                    (r.get("omr_no", "") if is_type1
+                     else r.get("qcab_serial_no", ""))
                 ))
             
             # Auto-select row 1 in treeview
@@ -743,7 +756,9 @@ class AttendanceViewerDemo:
             record = self.current_records[row_num]
 
             self.set_readonly_entry(self.edit_reg, record.get("registration_no", ""))
-            self.set_readonly_entry(self.edit_omr, record.get("omr_no", ""))
+            number_value = (record.get("omr_no", "") if self.is_type1
+                            else record.get("qcab_serial_no", ""))
+            self.set_readonly_entry(self.edit_omr, number_value)
             self.set_readonly_entry(
                 self.edit_sig,
                 "Yes" if record.get("signature_present") else "No")
@@ -766,7 +781,7 @@ class AttendanceViewerDemo:
             else:
                 sig_crop = self.current_img[yc+40:yc+130, 380+shift : 850+shift]
                 reg_crop = self.current_img[yc-25:yc+25, 760+shift : 950+shift]
-                omr_crop = np.zeros((50, 50, 3), dtype=np.uint8)
+                omr_crop = self.current_img[yc-5:yc+45, 1180+shift : 1490+shift]
 
             h_img, w_img = self.current_img.shape[:2]
             inv_x0, inv_y0, inv_x1, inv_y1 = self.get_invigilator_signature_box(w_img, h_img)
@@ -871,6 +886,7 @@ class AttendanceViewerDemo:
             signature_present = 1 if record.get("signature_present") else 0
             reg_val = record.get("registration_no", "")
             omr_val = record.get("omr_no", "")
+            qcab_val = record.get("qcab_serial_no", "")
 
             if is_type1:
                 cursor.execute("""
@@ -908,6 +924,7 @@ class AttendanceViewerDemo:
                         @row_number = ?,
                         @status = ?,
                         @signature_present = ?,
+                        @qcab_serial_no = ?,
                         @registration_no = ?
                 """, (
                     filename,
@@ -918,6 +935,7 @@ class AttendanceViewerDemo:
                     row_number,
                     status,
                     signature_present,
+                    qcab_val,
                     reg_val,
                 ))
 
@@ -1015,6 +1033,48 @@ class AttendanceViewerDemo:
                     "Run sql/attendance_sheets_schema.sql in SSMS first.")
                 conn.close()
                 return
+
+            if not is_type1 and not self.check_column_exists(
+                    conn, "attendance_sheet_data2", "qcab_serial_no"):
+                cursor.execute(
+                    "ALTER TABLE dbo.attendance_sheet_data2 "
+                    "ADD qcab_serial_no NVARCHAR(50) NULL")
+                conn.commit()
+
+            if not is_type1:
+                cursor.execute("""
+                    CREATE OR ALTER PROCEDURE dbo.sp_insert_attendance_sheet_data2
+                        @filename NVARCHAR(500),
+                        @center_code NVARCHAR(50) = NULL,
+                        @subcenter_code NVARCHAR(50) = NULL,
+                        @subject_code NVARCHAR(50) = NULL,
+                        @invigilator_signed BIT = 0,
+                        @row_number INT,
+                        @status NVARCHAR(50) = NULL,
+                        @signature_present BIT = 0,
+                        @registration_no NVARCHAR(50) = NULL,
+                        @qcab_serial_no NVARCHAR(50) = NULL
+                    AS
+                    BEGIN
+                        SET NOCOUNT ON;
+                        IF EXISTS (
+                            SELECT 1 FROM dbo.attendance_sheet_data2
+                            WHERE filename = @filename
+                              AND row_number = @row_number
+                        ) RETURN;
+                        INSERT INTO dbo.attendance_sheet_data2 (
+                            filename, center_code, subcenter_code, subject_code,
+                            invigilator_signed, row_number, status,
+                            signature_present, registration_no, qcab_serial_no
+                        ) VALUES (
+                            @filename, @center_code, @subcenter_code,
+                            @subject_code, @invigilator_signed, @row_number,
+                            @status, @signature_present, @registration_no,
+                            @qcab_serial_no
+                        );
+                    END
+                """)
+                conn.commit()
 
             if not self.check_table_exists(conn, "error_log"):
                 messagebox.showerror(
@@ -1134,18 +1194,21 @@ class AttendanceViewerDemo:
                                 "subcenter_code": row.get("Sub Center Code", ""),
                                 "subject_code": row.get("Subject Code", ""),
                                 "invigilator_signed": row.get("Invigilator Signed", ""),
+                                "has_qcab_column": "QCAB Serial No" in (reader.fieldnames or []),
                                 "records": []
                             }
                         
                         reg_val = row.get("Registration No", "")
                         omr_val = row.get("OMR No", "")
+                        qcab_val = row.get("QCAB Serial No", "")
                             
                         self.attendance_csv_records[filename]["records"].append({
                             "row_number": int(row.get("Row Number", 1)),
                             "status": row.get("Status", "Not Marked"),
                             "signature_present": (row.get("Signature Present") == "Yes"),
                             "registration_no": reg_val,
-                            "omr_no": omr_val
+                            "omr_no": omr_val,
+                            "qcab_serial_no": qcab_val
                         })
                         
                 for fname in self.attendance_csv_records:
@@ -1163,7 +1226,8 @@ class AttendanceViewerDemo:
             writer.writerow([
                 "Filename", "Center Code", "Sub Center Code", "Subject Code",
                 "Invigilator Signed", "Row Number", "Status",
-                "Signature Present", "Registration No", "OMR No"
+                "Signature Present", "Registration No", "OMR No",
+                "QCAB Serial No"
             ])
             for filename in sorted(self.file_combo["values"]):
                 filename = self.normalize_image_path(filename)
@@ -1176,6 +1240,7 @@ class AttendanceViewerDemo:
                     for r in data.get("records", []):
                         reg_no = r.get("registration_no", "")
                         omr_no = r.get("omr_no", "")
+                        qcab_no = r.get("qcab_serial_no", "")
 
                         writer.writerow([
                             filename,
@@ -1187,7 +1252,8 @@ class AttendanceViewerDemo:
                             r["status"],
                             "Yes" if r["signature_present"] else "No",
                             reg_no,
-                            omr_no
+                            omr_no,
+                            qcab_no
                         ])
 
     def export_results_to_excel(self):

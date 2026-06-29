@@ -58,6 +58,7 @@ BEGIN
         status              NVARCHAR(50)      NULL,
         signature_present   BIT               NOT NULL CONSTRAINT DF_attendance_sheet_data2_signature_present DEFAULT (0),
         registration_no     NVARCHAR(50)      NULL,
+        qcab_serial_no      NVARCHAR(50)      NULL,
         created_at          DATETIME2(0)      NOT NULL CONSTRAINT DF_attendance_sheet_data2_created_at DEFAULT (SYSUTCDATETIME()),
         CONSTRAINT PK_attendance_sheet_data2 PRIMARY KEY CLUSTERED (id ASC)
     );
@@ -67,6 +68,15 @@ BEGIN
 
     CREATE UNIQUE NONCLUSTERED INDEX UX_attendance_sheet_data2_filename_row
         ON dbo.attendance_sheet_data2 (filename ASC, row_number ASC);
+END;
+GO
+
+/* Upgrade an existing Sheet 2 table created by an older version. */
+IF OBJECT_ID(N'dbo.attendance_sheet_data2', N'U') IS NOT NULL
+   AND COL_LENGTH(N'dbo.attendance_sheet_data2', N'qcab_serial_no') IS NULL
+BEGIN
+    ALTER TABLE dbo.attendance_sheet_data2
+        ADD qcab_serial_no NVARCHAR(50) NULL;
 END;
 GO
 
@@ -157,7 +167,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_insert_attendance_sheet_data2
     @row_number         INT,
     @status             NVARCHAR(50) = NULL,
     @signature_present  BIT = 0,
-    @registration_no    NVARCHAR(50) = NULL
+    @registration_no    NVARCHAR(50) = NULL,
+    @qcab_serial_no     NVARCHAR(50) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -181,7 +192,8 @@ BEGIN
         row_number,
         status,
         signature_present,
-        registration_no
+        registration_no,
+        qcab_serial_no
     )
     VALUES (
         @filename,
@@ -192,7 +204,8 @@ BEGIN
         @row_number,
         @status,
         @signature_present,
-        @registration_no
+        @registration_no,
+        @qcab_serial_no
     );
 END;
 GO

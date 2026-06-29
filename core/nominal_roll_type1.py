@@ -181,12 +181,21 @@ def clean_and_segment_digits(crop_bgr):
     # Isolate ink
     gray_ink = extract_blue_ink(crop_inner)
     
-    # Fixed threshold to avoid noise amplification
+    # Fixed threshold to avoid noise amplification.  Closing is important for
+    # handwriting: scanner resampling frequently breaks one pen stroke into
+    # two or three components.
     _, thresh = cv2.threshold(gray_ink, 200, 255, cv2.THRESH_BINARY_INV)
+    thresh = cv2.morphologyEx(
+        thresh, cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2)))
     
     # Remove horizontal/vertical lines (in case of residue lines)
-    h_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (25, 1)))
-    v_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, 25)))
+    h_lines = cv2.morphologyEx(
+        thresh, cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (max(25, int(w_t * .75)), 1)))
+    v_lines = cv2.morphologyEx(
+        thresh, cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(25, int(h_t * .90)))))
     clean_mask = cv2.bitwise_and(thresh, cv2.bitwise_not(cv2.bitwise_or(h_lines, v_lines)))
     
     # Find components
@@ -200,12 +209,10 @@ def clean_and_segment_digits(crop_bgr):
         x, y, w, h = stats[idx, cv2.CC_STAT_LEFT], stats[idx, cv2.CC_STAT_TOP], stats[idx, cv2.CC_STAT_WIDTH], stats[idx, cv2.CC_STAT_HEIGHT]
         area = stats[idx, cv2.CC_STAT_AREA]
         
-        # Filter noise and large borders
-        if area < 6 or w > w_t * 0.7 or h > h_t * 0.9:
-            continue
-            
-        # Filter thin vertical lines
-        if w <= 3 or (h > 15 and h / w > 3.5):
+        # A real digit occupies a useful part of the field height.  Do not
+        # reject narrow components: handwritten digit 1 is commonly 1-3 px
+        # wide in these scans.
+        if area < 4 or h < h_t * 0.28 or w > w_t * 0.7 or h > h_t * 0.98:
             continue
             
         # Filter components touching top/bottom borders
@@ -398,6 +405,45 @@ def read_handwritten_reg_no_9(crop_bgr):
     return "".join(digits).strip()
 
 
+def read_registration_number(crop_bgr, reader):
+    """Read a printed or handwritten registration number from an open field.
+
+    Printed values remain an EasyOCR job.  Handwritten values are isolated
+    from the form colour and classified one digit at a time with the same
+    MNIST model/normalisation used by OMR_Sheets.py.
+    """
+    if crop_bgr is None or crop_bgr.size == 0:
+        return ""
+
+    easy_candidates = []
+    # The ink-only pass often recovers a leading/trailing handwritten digit
+    # which EasyOCR drops when form text is still visible.
+    for source in (crop_bgr, extract_blue_ink(crop_bgr)):
+        enlarged = cv2.resize(
+            source, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+        results = reader.readtext(
+            enlarged, detail=1, allowlist="0123456789", paragraph=False)
+        for _, text, confidence in results:
+            digits = "".join(c for c in text if c.isdigit())
+            if 6 <= len(digits) <= 9:
+                easy_candidates.append((float(confidence), digits))
+
+    credible = [item for item in easy_candidates if item[0] >= 0.30]
+    pool = credible or easy_candidates
+    # Registration numbers vary in length.  Within a clean field, retaining
+    # the longest credible reading prevents dropped narrow digits (usually 1).
+    best_easy = max(pool, key=lambda item: (len(item[1]), item[0]), default=(0.0, ""))
+    handwritten = read_handwritten_field(crop_bgr)
+
+    # High-confidence EasyOCR is particularly reliable for the computer
+    # printed rows.  Otherwise prefer a complete MNIST handwriting result.
+    if best_easy[0] >= 0.75:
+        return best_easy[1]
+    if 6 <= len(handwritten) <= 9:
+        return handwritten
+    return best_easy[1]
+
+
 def extract_header_codes(img, reader):
     """
     Extracts Subject Code, Centre Code, and Sub-Centre Code from the top header using EasyOCR.
@@ -522,21 +568,10 @@ def process_attendance_sheet1(img_path, reader=None):
 
         # C. Registration Number OCR (using same logic as OMR no)
         reg_x0, reg_x1 = 830, 1030
-        reg_crop = img[yc-20:yc+20, reg_x0+shift : reg_x1+shift]
-        reg_no = ""
-        if reg_crop.size > 0:
-            reg_crop_large = cv2.resize(reg_crop, (0,0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-            reg_txt = reader.readtext(reg_crop_large, detail=0, allowlist="0123456789")
-            if reg_txt:
-                joined = "".join(reg_txt).strip()
-                digits = "".join(c for c in joined if c.isdigit())
-                if len(digits) >= 6:
-                    reg_no = digits
-            
-            if not reg_no or len(reg_no) < 6:
-                handwritten = read_handwritten_reg_no_9(reg_crop)
-                if len(handwritten) >= 6:
-                    reg_no = handwritten
+        # The number is written below the field label.  The old symmetric
+        # crop included the label and clipped the bottom of tall strokes.
+        reg_crop = img[yc-5:yc+45, reg_x0+shift : reg_x1+shift]
+        reg_no = read_registration_number(reg_crop, reader)
                 
         records.append({
             "row_number": idx + 1,
