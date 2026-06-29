@@ -2,6 +2,7 @@ opencv-python>=4.7.0
 numpy>=1.23.0
 Pillow>=9.0.0
 easyocr>=1.6.2
+torch>=2.0.0
 onnxruntime>=1.14.0
 pyzbar>=0.1.9
 openpyxl>=3.1.0
