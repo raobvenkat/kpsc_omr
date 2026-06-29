@@ -42,6 +42,15 @@ BEGIN
 END;
 GO
 
+/* Upgrade an existing Sheet 1 table created by an older version. */
+IF OBJECT_ID(N'dbo.attendance_sheet_data_1', N'U') IS NOT NULL
+   AND COL_LENGTH(N'dbo.attendance_sheet_data_1', N'registration_no') IS NULL
+BEGIN
+    ALTER TABLE dbo.attendance_sheet_data_1
+        ADD registration_no NVARCHAR(50) NULL;
+END;
+GO
+
 /* ============================================================
    TABLE: attendance_sheet_data2  (Attendance Sheet 2 / QCAB)
    ============================================================ */
