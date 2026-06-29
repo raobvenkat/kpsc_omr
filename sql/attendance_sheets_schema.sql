@@ -29,6 +29,7 @@ BEGIN
         status              NVARCHAR(50)      NULL,
         signature_present   BIT               NOT NULL CONSTRAINT DF_attendance_sheet_data_1_signature_present DEFAULT (0),
         omr_no              NVARCHAR(50)      NULL,
+        registration_no     NVARCHAR(50)      NULL,
         created_at          DATETIME2(0)      NOT NULL CONSTRAINT DF_attendance_sheet_data_1_created_at DEFAULT (SYSUTCDATETIME()),
         CONSTRAINT PK_attendance_sheet_data_1 PRIMARY KEY CLUSTERED (id ASC)
     );
@@ -101,7 +102,8 @@ CREATE OR ALTER PROCEDURE dbo.sp_insert_attendance_sheet_data_1
     @row_number         INT,
     @status             NVARCHAR(50) = NULL,
     @signature_present  BIT = 0,
-    @omr_no             NVARCHAR(50) = NULL
+    @omr_no             NVARCHAR(50) = NULL,
+    @registration_no    NVARCHAR(50) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -125,7 +127,8 @@ BEGIN
         row_number,
         status,
         signature_present,
-        omr_no
+        omr_no,
+        registration_no
     )
     VALUES (
         @filename,
@@ -136,7 +139,8 @@ BEGIN
         @row_number,
         @status,
         @signature_present,
-        @omr_no
+        @omr_no,
+        @registration_no
     );
 END;
 GO

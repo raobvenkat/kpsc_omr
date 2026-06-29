@@ -250,7 +250,8 @@ def process_attendance_sheet2(img_path, reader=None):
             "row_number": idx + 1,
             "status": status,
             "signature_present": signature_present,
-            "reg_omr": registration_no
+            "registration_no": registration_no,
+            "omr_no": ""
         })
         
     # Extract header codes

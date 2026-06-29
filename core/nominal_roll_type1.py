@@ -405,12 +405,31 @@ def process_attendance_sheet1(img_path, reader=None):
                 digits = "".join(c for c in joined if c.isdigit())
                 if len(digits) >= 6:
                     omr_no = digits
+
+        # C. Registration Number OCR (using same logic as OMR no)
+        reg_x0, reg_x1 = 830, 1030
+        reg_crop = img[yc-20:yc+20, reg_x0+shift : reg_x1+shift]
+        reg_no = ""
+        if reg_crop.size > 0:
+            reg_crop_large = cv2.resize(reg_crop, (0,0), fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+            reg_txt = reader.readtext(reg_crop_large, detail=0, allowlist="0123456789")
+            if reg_txt:
+                joined = "".join(reg_txt).strip()
+                digits = "".join(c for c in joined if c.isdigit())
+                if len(digits) >= 6:
+                    reg_no = digits
+            
+            if not reg_no or len(reg_no) < 6:
+                handwritten = read_handwritten_field(reg_crop)
+                if len(handwritten) >= 6:
+                    reg_no = handwritten
                 
         records.append({
             "row_number": idx + 1,
             "status": status,
             "signature_present": signature_present,
-            "reg_omr": omr_no
+            "registration_no": reg_no,
+            "omr_no": omr_no
         })
         
     # Extract header codes

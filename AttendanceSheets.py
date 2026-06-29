@@ -215,20 +215,22 @@ class AttendanceViewerDemo:
         tree_scroll_y = ttk.Scrollbar(table_frame, orient="vertical")
         tree_scroll_y.pack(side="right", fill="y")
         
-        self.tree = ttk.Treeview(table_frame, columns=("row", "status", "sig", "inv_sig", "reg_omr"), show="headings", yscrollcommand=tree_scroll_y.set, height=6)
+        self.tree = ttk.Treeview(table_frame, columns=("row", "status", "sig", "inv_sig", "reg_no", "omr_no"), show="headings", yscrollcommand=tree_scroll_y.set, height=6)
         tree_scroll_y.config(command=self.tree.yview)
         
         self.tree.heading("row", text="Row")
         self.tree.heading("status", text="Status")
         self.tree.heading("sig", text="Std. Signature")
         self.tree.heading("inv_sig", text="Inv. Signature")
-        self.tree.heading("reg_omr", text="Registration/OMR No")
+        self.tree.heading("reg_no", text="Registration No")
+        self.tree.heading("omr_no", text="OMR No")
         
         self.tree.column("row", width=60, anchor="center")
         self.tree.column("status", width=120, anchor="center")
         self.tree.column("sig", width=120, anchor="center")
         self.tree.column("inv_sig", width=120, anchor="center")
-        self.tree.column("reg_omr", width=200, anchor="center")
+        self.tree.column("reg_no", width=120, anchor="center")
+        self.tree.column("omr_no", width=120, anchor="center")
         self.tree.pack(fill="x", expand=False, padx=5, pady=5)
         self.tree.bind("<<TreeviewSelect>>", self.on_row_selected)
         
@@ -250,10 +252,15 @@ class AttendanceViewerDemo:
         self.inv_sig_preview_lbl = tk.Label(self.inv_sig_preview_wrapper, bg="#2b2b36")
         self.inv_sig_preview_lbl.pack(fill="both", expand=True)
         
-        self.reg_preview_wrapper = tk.LabelFrame(details_frame, text="Registration / OMR No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        self.reg_preview_wrapper.pack(side="left", fill="both", expand=True, padx=10, pady=5)
+        self.reg_preview_wrapper = tk.LabelFrame(details_frame, text="Registration No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
+        self.reg_preview_wrapper.pack(side="left", fill="both", expand=True, padx=5, pady=5)
         self.reg_preview_lbl = tk.Label(self.reg_preview_wrapper, bg="#2b2b36")
         self.reg_preview_lbl.pack(fill="both", expand=True)
+
+        self.omr_preview_wrapper = tk.LabelFrame(details_frame, text="OMR No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
+        self.omr_preview_wrapper.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        self.omr_preview_lbl = tk.Label(self.omr_preview_wrapper, bg="#2b2b36")
+        self.omr_preview_lbl.pack(fill="both", expand=True)
 
         # Correction Form Frame
         correction_frame = tk.LabelFrame(right_frame, text="Candidate Row Form", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, height=90)
@@ -261,29 +268,35 @@ class AttendanceViewerDemo:
         correction_frame.pack_propagate(False)
 
         # Grid layout for read-only row details
-        for col_idx in range(8):
+        for col_idx in range(10):
             correction_frame.columnconfigure(col_idx, weight=1)
 
-        lbl_reg = ttk.Label(correction_frame, text="Reg/OMR No:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
+        lbl_reg = ttk.Label(correction_frame, text="Reg No:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
         lbl_reg.grid(row=0, column=0, sticky="w", padx=5, pady=15)
-        self.edit_reg = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=15)
+        self.edit_reg = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=12)
         self.edit_reg.config(state="readonly")
         self.edit_reg.grid(row=0, column=1, sticky="ew", padx=5, pady=15)
 
+        lbl_omr = ttk.Label(correction_frame, text="OMR No:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
+        lbl_omr.grid(row=0, column=2, sticky="w", padx=5, pady=15)
+        self.edit_omr = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=12)
+        self.edit_omr.config(state="readonly")
+        self.edit_omr.grid(row=0, column=3, sticky="ew", padx=5, pady=15)
+
         lbl_sig = ttk.Label(correction_frame, text="Std. Sign:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
-        lbl_sig.grid(row=0, column=2, sticky="w", padx=5, pady=15)
+        lbl_sig.grid(row=0, column=4, sticky="w", padx=5, pady=15)
         self.edit_sig = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=8, state="readonly")
-        self.edit_sig.grid(row=0, column=3, sticky="w", padx=5, pady=15)
+        self.edit_sig.grid(row=0, column=5, sticky="w", padx=5, pady=15)
 
         lbl_inv_sig = ttk.Label(correction_frame, text="Inv. Sign:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
-        lbl_inv_sig.grid(row=0, column=4, sticky="w", padx=5, pady=15)
+        lbl_inv_sig.grid(row=0, column=6, sticky="w", padx=5, pady=15)
         self.edit_inv_sig = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=8, state="readonly")
-        self.edit_inv_sig.grid(row=0, column=5, sticky="w", padx=5, pady=15)
+        self.edit_inv_sig.grid(row=0, column=7, sticky="w", padx=5, pady=15)
 
         lbl_status = ttk.Label(correction_frame, text="Status:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
-        lbl_status.grid(row=0, column=6, sticky="w", padx=5, pady=15)
+        lbl_status.grid(row=0, column=8, sticky="w", padx=5, pady=15)
         self.edit_status = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=14, state="readonly")
-        self.edit_status.grid(row=0, column=7, sticky="ew", padx=5, pady=15)
+        self.edit_status.grid(row=0, column=9, sticky="ew", padx=5, pady=15)
 
     def build_status_panel(self, parent):
         status_outer = tk.LabelFrame(
@@ -361,10 +374,16 @@ class AttendanceViewerDemo:
         records = data.get("records", [])
         if not records:
             return "warning"
+        is_type1 = getattr(self, "is_type1", True)
         for record in records:
-            reg_omr = str(record.get("reg_omr", "")).strip()
-            if not reg_omr or len(reg_omr) < 6:
-                return "warning"
+            reg_val = str(record.get("registration_no", "")).strip()
+            omr_val = str(record.get("omr_no", "")).strip()
+            if is_type1:
+                if not reg_val or len(reg_val) < 6 or not omr_val or len(omr_val) < 6:
+                    return "warning"
+            else:
+                if not reg_val or len(reg_val) < 6:
+                    return "warning"
             if record.get("status") in ("Double Marked", "Not Marked"):
                 return "warning"
         return "ok"
@@ -470,6 +489,7 @@ class AttendanceViewerDemo:
         self.sig_preview_lbl.config(image="")
         self.inv_sig_preview_lbl.config(image="")
         self.reg_preview_lbl.config(image="")
+        self.omr_preview_lbl.config(image="")
         for item in self.tree.get_children():
             self.tree.delete(item)
         if hasattr(self, "export_btn"):
@@ -551,9 +571,16 @@ class AttendanceViewerDemo:
                 else:
                     # Also reprocess if OMR/Reg numbers are missing or incomplete (less than 6 digits)
                     for r in records:
-                        if not r.get("reg_omr") or len(str(r.get("reg_omr")).strip()) < 6:
-                            needs_reprocess = True
-                            break
+                        reg_val = str(r.get("registration_no", "")).strip()
+                        omr_val = str(r.get("omr_no", "")).strip()
+                        if is_type1:
+                            if not reg_val or len(reg_val) < 6 or not omr_val or len(omr_val) < 6:
+                                needs_reprocess = True
+                                break
+                        else:
+                            if not reg_val or len(reg_val) < 6:
+                                needs_reprocess = True
+                                break
             else:
                 needs_reprocess = True
 
@@ -635,7 +662,9 @@ class AttendanceViewerDemo:
                 
                 # Reg/OMR box (cyan/yellow)
                 if is_type1:
-                    # OMR No box
+                    # Registration No box (yellow)
+                    cv2.rectangle(annotated, (reg_x0 + shift, yc - 25), (reg_x1 + shift, yc + 25), (255, 255, 0), 2)
+                    # OMR No box (cyan)
                     cv2.rectangle(annotated, (omr_x0 + shift, yc - 25), (omr_x1 + shift, yc + 25), (0, 255, 255), 2)
                 else:
                     # Registration No box
@@ -682,7 +711,8 @@ class AttendanceViewerDemo:
                     r["status"],
                     "Yes" if r["signature_present"] else "No",
                     "Yes" if self.current_invigilator_signed else "No",
-                    r.get("reg_omr", "")
+                    r.get("registration_no", ""),
+                    r.get("omr_no", "")
                 ))
             
             # Auto-select row 1 in treeview
@@ -712,7 +742,8 @@ class AttendanceViewerDemo:
         if self.current_records and row_num < len(self.current_records):
             record = self.current_records[row_num]
 
-            self.set_readonly_entry(self.edit_reg, record.get("reg_omr", ""))
+            self.set_readonly_entry(self.edit_reg, record.get("registration_no", ""))
+            self.set_readonly_entry(self.edit_omr, record.get("omr_no", ""))
             self.set_readonly_entry(
                 self.edit_sig,
                 "Yes" if record.get("signature_present") else "No")
@@ -730,10 +761,12 @@ class AttendanceViewerDemo:
             # Crop cells
             if self.is_type1:
                 sig_crop = self.current_img[yc+25:yc+105, 330+shift : 810+shift]
-                reg_crop = self.current_img[yc-25:yc+25, 1090+shift : 1250+shift] # OMR No crop for Sheet 1
+                reg_crop = self.current_img[yc-25:yc+25, 830+shift : 1030+shift]
+                omr_crop = self.current_img[yc-25:yc+25, 1090+shift : 1250+shift]
             else:
                 sig_crop = self.current_img[yc+40:yc+130, 380+shift : 850+shift]
-                reg_crop = self.current_img[yc-25:yc+25, 760+shift : 950+shift] # Registration No crop for Sheet 2
+                reg_crop = self.current_img[yc-25:yc+25, 760+shift : 950+shift]
+                omr_crop = np.zeros((50, 50, 3), dtype=np.uint8)
 
             h_img, w_img = self.current_img.shape[:2]
             inv_x0, inv_y0, inv_x1, inv_y1 = self.get_invigilator_signature_box(w_img, h_img)
@@ -756,6 +789,7 @@ class AttendanceViewerDemo:
             sig_resized = fit_preview(sig_crop, self.sig_preview_lbl)
             inv_sig_resized = fit_preview(inv_sig_crop, self.inv_sig_preview_lbl)
             reg_resized = fit_preview(reg_crop, self.reg_preview_lbl)
+            omr_resized = fit_preview(omr_crop, self.omr_preview_lbl)
             
             # Display Previews
             self.tk_sig = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(sig_resized, cv2.COLOR_BGR2RGB)))
@@ -766,6 +800,9 @@ class AttendanceViewerDemo:
             
             self.tk_reg = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(reg_resized, cv2.COLOR_BGR2RGB)))
             self.reg_preview_lbl.config(image=self.tk_reg)
+
+            self.tk_omr = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(omr_resized, cv2.COLOR_BGR2RGB)))
+            self.omr_preview_lbl.config(image=self.tk_omr)
 
     def browse_folder(self):
         dir_path = filedialog.askdirectory()
@@ -832,7 +869,8 @@ class AttendanceViewerDemo:
             row_number = int(record.get("row_number", 0))
             status = record.get("status", "Not Marked")
             signature_present = 1 if record.get("signature_present") else 0
-            reg_omr = record.get("reg_omr", "")
+            reg_val = record.get("registration_no", "")
+            omr_val = record.get("omr_no", "")
 
             if is_type1:
                 cursor.execute("""
@@ -845,7 +883,8 @@ class AttendanceViewerDemo:
                         @row_number = ?,
                         @status = ?,
                         @signature_present = ?,
-                        @omr_no = ?
+                        @omr_no = ?,
+                        @registration_no = ?
                 """, (
                     filename,
                     center_code,
@@ -855,7 +894,8 @@ class AttendanceViewerDemo:
                     row_number,
                     status,
                     signature_present,
-                    reg_omr,
+                    omr_val,
+                    reg_val,
                 ))
             else:
                 cursor.execute("""
@@ -878,7 +918,7 @@ class AttendanceViewerDemo:
                     row_number,
                     status,
                     signature_present,
-                    reg_omr,
+                    reg_val,
                 ))
 
     def process_all_sheets_to_mssql(self):
@@ -899,6 +939,74 @@ class AttendanceViewerDemo:
         try:
             conn = self.get_sql_connection()
             cursor = conn.cursor()
+
+            # Auto-upgrade schema if table exists but doesn't have registration_no
+            if self.check_table_exists(conn, "attendance_sheet_data_1"):
+                cursor.execute("""
+                SELECT COUNT(*) FROM sys.columns 
+                WHERE object_id = OBJECT_ID(N'dbo.attendance_sheet_data_1') 
+                  AND name = 'registration_no'
+                """)
+                if cursor.fetchone()[0] == 0:
+                    try:
+                        cursor.execute("ALTER TABLE dbo.attendance_sheet_data_1 ADD registration_no NVARCHAR(50) NULL")
+                        conn.commit()
+                        cursor.execute("""
+                        CREATE OR ALTER PROCEDURE dbo.sp_insert_attendance_sheet_data_1
+                            @filename           NVARCHAR(500),
+                            @center_code        NVARCHAR(50) = NULL,
+                            @subcenter_code     NVARCHAR(50) = NULL,
+                            @subject_code       NVARCHAR(50) = NULL,
+                            @invigilator_signed BIT = 0,
+                            @row_number         INT,
+                            @status             NVARCHAR(50) = NULL,
+                            @signature_present  BIT = 0,
+                            @omr_no             NVARCHAR(50) = NULL,
+                            @registration_no    NVARCHAR(50) = NULL
+                        AS
+                        BEGIN
+                            SET NOCOUNT ON;
+
+                            IF EXISTS (
+                                SELECT 1
+                                FROM dbo.attendance_sheet_data_1
+                                WHERE filename = @filename
+                                  AND row_number = @row_number
+                            )
+                            BEGIN
+                                RETURN;
+                            END;
+
+                            INSERT INTO dbo.attendance_sheet_data_1 (
+                                filename,
+                                center_code,
+                                subcenter_code,
+                                subject_code,
+                                invigilator_signed,
+                                row_number,
+                                status,
+                                signature_present,
+                                omr_no,
+                                registration_no
+                            )
+                            VALUES (
+                                @filename,
+                                @center_code,
+                                @subcenter_code,
+                                @subject_code,
+                                @invigilator_signed,
+                                @row_number,
+                                @status,
+                                @signature_present,
+                                @omr_no,
+                                @registration_no
+                            );
+                        END;
+                        """)
+                        conn.commit()
+                    except Exception as ex:
+                        print(f"Failed to auto-upgrade database schema: {ex}")
+                        conn.rollback()
 
             if not self.check_table_exists(conn, table_name):
                 messagebox.showerror(
@@ -1031,13 +1139,13 @@ class AttendanceViewerDemo:
                         
                         reg_val = row.get("Registration No", "")
                         omr_val = row.get("OMR No", "")
-                        reg_omr = reg_val if reg_val else omr_val
                             
                         self.attendance_csv_records[filename]["records"].append({
                             "row_number": int(row.get("Row Number", 1)),
                             "status": row.get("Status", "Not Marked"),
                             "signature_present": (row.get("Signature Present") == "Yes"),
-                            "reg_omr": reg_omr
+                            "registration_no": reg_val,
+                            "omr_no": omr_val
                         })
                         
                 for fname in self.attendance_csv_records:
@@ -1066,12 +1174,8 @@ class AttendanceViewerDemo:
                     subject_code = data.get("subject_code", "")
                     invigilator_signed = int(data.get("invigilator_signed") or 0)
                     for r in data.get("records", []):
-                        reg_no = ""
-                        omr_no = ""
-                        if is_type1:
-                            omr_no = r.get("reg_omr", "")
-                        else:
-                            reg_no = r.get("reg_omr", "")
+                        reg_no = r.get("registration_no", "")
+                        omr_no = r.get("omr_no", "")
 
                         writer.writerow([
                             filename,
