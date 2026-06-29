@@ -264,7 +264,7 @@ def process_attendance_sheet2(img_path, reader=None):
         reg_crop = img[yc-5:yc+45, reg_x0+shift : reg_x1+shift]
         registration_no = read_registration_number(reg_crop, reader)
 
-        qcab_crop = img[yc-5:yc+45, QCAB_X0+shift : QCAB_X1+shift]
+        qcab_crop = img[yc-20:yc+30, QCAB_X0+shift : QCAB_X1+shift]
         qcab_serial_no = read_qcab_serial_number(qcab_crop, reader)
         
         records.append({

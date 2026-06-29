@@ -680,7 +680,7 @@ class AttendanceViewerDemo:
                 else:
                     # Registration No and QCAB Serial No boxes
                     cv2.rectangle(annotated, (reg_x0 + shift, yc - 25), (reg_x1 + shift, yc + 25), (255, 255, 0), 2)
-                    cv2.rectangle(annotated, (qcab_x0 + shift, yc - 5), (qcab_x1 + shift, yc + 45), (0, 255, 255), 2)
+                    cv2.rectangle(annotated, (qcab_x0 + shift, yc - 20), (qcab_x1 + shift, yc + 30), (0, 255, 255), 2)
 
             inv_x0, inv_y0, inv_x1, inv_y1 = self.get_invigilator_signature_box(w, h)
             inv_color = (0, 255, 0) if self.current_invigilator_signed else (0, 0, 255)
@@ -781,7 +781,7 @@ class AttendanceViewerDemo:
             else:
                 sig_crop = self.current_img[yc+40:yc+130, 380+shift : 850+shift]
                 reg_crop = self.current_img[yc-25:yc+25, 760+shift : 950+shift]
-                omr_crop = self.current_img[yc-5:yc+45, 1180+shift : 1490+shift]
+                omr_crop = self.current_img[yc-20:yc+30, 1180+shift : 1490+shift]
 
             h_img, w_img = self.current_img.shape[:2]
             inv_x0, inv_y0, inv_x1, inv_y1 = self.get_invigilator_signature_box(w_img, h_img)
