@@ -284,6 +284,120 @@ def read_handwritten_field_grid(crop_bgr):
     return "".join(digits)
 
 
+def read_handwritten_reg_no_9(crop_bgr):
+    """
+    Recognizes digits in the 9-digit Registration No box by splitting the crop
+    horizontally into 9 equal cells and using the OMR_Sheets.py cell processing logic.
+    """
+    if sess is None or crop_bgr is None or crop_bgr.size == 0:
+        return ""
+        
+    h, w = crop_bgr.shape[:2]
+    num_cells = 9
+    cell_w = w / num_cells
+    trim_ratio = 0.10
+    
+    digits = []
+    for i in range(num_cells):
+        x0 = int(i * cell_w)
+        x1 = int((i + 1) * cell_w)
+        cell_bgr = crop_bgr[0:h, x0:x1]
+        if cell_bgr.size == 0:
+            digits.append(" ")
+            continue
+            
+        gray = cv2.cvtColor(cell_bgr, cv2.COLOR_BGR2GRAY)
+        hc, wc = gray.shape[:2]
+        
+        # Blue ink filter / fallback from OMR_Sheets.py
+        hsv_crop = cv2.cvtColor(cell_bgr, cv2.COLOR_BGR2HSV)
+        lower_blue = np.array([90, 40, 40])
+        upper_blue = np.array([140, 255, 255])
+        blue_mask = cv2.inRange(hsv_crop, lower_blue, upper_blue)
+        if np.sum(blue_mask > 0) > 15:
+            gray_clean = np.ones_like(gray) * 255
+            gray_clean[blue_mask > 0] = gray[blue_mask > 0]
+        else:
+            gray_clean = gray.copy()
+            
+        margin_y = max(1, int(hc * trim_ratio))
+        margin_x = max(1, int(wc * trim_ratio))
+        gray_trimmed = gray_clean[margin_y:-margin_y, margin_x:-margin_x]
+        h_t, w_t = gray_trimmed.shape
+        
+        min_val, max_val, _, _ = cv2.minMaxLoc(gray_trimmed)
+        contrast = max_val - min_val
+        if contrast < 40:
+            digits.append(" ")
+            continue
+            
+        gray_norm = cv2.normalize(gray_trimmed, None, 0, 255, cv2.NORM_MINMAX)
+        _, binary_inv = cv2.threshold(gray_norm, 160, 255, cv2.THRESH_BINARY_INV)
+        
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_inv, connectivity=8)
+        if num_labels <= 1:
+            digits.append(" ")
+            continue
+            
+        erase_mask = np.zeros_like(binary_inv)
+        for idx in range(1, num_labels):
+            cx_comp = stats[idx, cv2.CC_STAT_LEFT]
+            cy_comp = stats[idx, cv2.CC_STAT_TOP]
+            w_comp = stats[idx, cv2.CC_STAT_WIDTH]
+            h_comp = stats[idx, cv2.CC_STAT_HEIGHT]
+            touches = (cx_comp <= 1) or (cy_comp <= 1) or (cx_comp + w_comp >= w_t - 1) or (cy_comp + h_comp >= h_t - 1)
+            if touches:
+                erase_mask[labels == idx] = 255
+                
+        binary_clean = binary_inv.copy()
+        binary_clean[erase_mask > 0] = 0
+        
+        num_labels2, labels2, stats2, _ = cv2.connectedComponentsWithStats(binary_clean, connectivity=8)
+        if num_labels2 <= 1:
+            digits.append(" ")
+            continue
+            
+        largest_label = 1 + np.argmax(stats2[1:, cv2.CC_STAT_AREA])
+        largest_area = stats2[largest_label, cv2.CC_STAT_AREA]
+        if largest_area < 8:
+            digits.append(" ")
+            continue
+            
+        cell_mask = (labels2 == largest_label).astype(np.uint8) * 255
+        y_indices, x_indices = np.where(cell_mask > 0)
+        if len(y_indices) == 0 or len(x_indices) == 0:
+            digits.append(" ")
+            continue
+            
+        y_min_idx, y_max_idx = np.min(y_indices), np.max(y_indices)
+        x_min_idx, x_max_idx = np.min(x_indices), np.max(x_indices)
+        
+        digit_crop = cell_mask[y_min_idx:y_max_idx+1, x_min_idx:x_max_idx+1]
+        h_c, w_c = digit_crop.shape
+        if h_c == 0 or w_c == 0:
+            digits.append(" ")
+            continue
+            
+        if h_c > w_c:
+            new_h = 20
+            new_w = max(1, int(w_c * (20.0 / h_c)))
+        else:
+            new_w = 20
+            new_h = max(1, int(h_c * (20.0 / w_c)))
+            
+        digit_resized = cv2.resize(digit_crop, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        canvas = np.zeros((28, 28), dtype=np.float32)
+        dy = (28 - new_h) // 2
+        dx = (28 - new_w) // 2
+        canvas[dy:dy+new_h, dx:dx+new_w] = digit_resized.astype(np.float32) / 255.0
+        
+        outputs = sess.run(None, {input_name: canvas.reshape(1, 1, 28, 28)})
+        predicted_digit = int(np.argmax(outputs[0]))
+        digits.append(str(predicted_digit))
+        
+    return "".join(digits).strip()
+
+
 def extract_header_codes(img, reader):
     """
     Extracts Subject Code, Centre Code, and Sub-Centre Code from the top header using EasyOCR.
@@ -420,7 +534,7 @@ def process_attendance_sheet1(img_path, reader=None):
                     reg_no = digits
             
             if not reg_no or len(reg_no) < 6:
-                handwritten = read_handwritten_field(reg_crop)
+                handwritten = read_handwritten_reg_no_9(reg_crop)
                 if len(handwritten) >= 6:
                     reg_no = handwritten
                 
