@@ -8,12 +8,18 @@ import glob
 import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
-import cv2
+try:
+    import cv2
+except Exception as e:
+    raise ImportError(
+        "OpenCV (cv2) is required but could not be imported.\n"
+        "Install it via: pip install opencv-python or pip install opencv-python-headless\n"
+        f"Original error: {e}"
+    )
 import numpy as np
 from PIL import Image, ImageTk
 from pyzbar.pyzbar import decode
 import onnxruntime as ort
-import pyodbc
 import easyocr
 import torch
 

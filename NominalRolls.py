@@ -9,7 +9,6 @@ import cv2
 import numpy as np
 from PIL import Image, ImageTk
 import easyocr
-import pyodbc
 
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -868,7 +867,7 @@ class AttendanceViewerDemo:
                 @filename = ?,
                 @error_message = ?
         """, (
-            "AttendanceSheets",
+            "NominalRolls",
             sheet_type,
             filename,
             str(error_message)[:4000],

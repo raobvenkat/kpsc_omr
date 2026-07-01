@@ -174,7 +174,8 @@ def build_connection_string(creds: Optional[Dict[str, Any]] = None) -> str:
         f"SERVER={creds['server']};"
         f"DATABASE={creds['database']};"
         f"UID={creds['username']};"
-        f"PWD={creds['password']}"
+        f"PWD={creds['password']};"
+        "TrustServerCertificate=yes;"
     )
 
 
@@ -199,6 +200,7 @@ def test_connection(
         f"DATABASE={database.strip()};"
         f"UID={username.strip()};"
         f"PWD={password};"
+        "TrustServerCertificate=yes;"
         f"Connection Timeout=8;"
     )
     conn = pyodbc.connect(conn_str, timeout=8)

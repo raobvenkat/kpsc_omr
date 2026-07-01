@@ -294,7 +294,7 @@ def read_handwritten_field_grid(crop_bgr):
 def read_handwritten_reg_no_9(crop_bgr):
     """
     Recognizes digits in the 9-digit Registration No box by splitting the crop
-    horizontally into 9 equal cells and using the OMR_Sheets.py cell processing logic.
+    horizontally into 9 equal cells and using the CounterFoilScanning.py cell processing logic.
     """
     if sess is None or crop_bgr is None or crop_bgr.size == 0:
         return ""
@@ -316,7 +316,7 @@ def read_handwritten_reg_no_9(crop_bgr):
         gray = cv2.cvtColor(cell_bgr, cv2.COLOR_BGR2GRAY)
         hc, wc = gray.shape[:2]
         
-        # Blue ink filter / fallback from OMR_Sheets.py
+        # Blue ink filter / fallback from CounterFoilScanning.py
         hsv_crop = cv2.cvtColor(cell_bgr, cv2.COLOR_BGR2HSV)
         lower_blue = np.array([90, 40, 40])
         upper_blue = np.array([140, 255, 255])
@@ -410,7 +410,7 @@ def read_registration_number(crop_bgr, reader):
 
     Printed values remain an EasyOCR job.  Handwritten values are isolated
     from the form colour and classified one digit at a time with the same
-    MNIST model/normalisation used by OMR_Sheets.py.
+    MNIST model/normalisation used by CounterFoilScanning.py.
     """
     if crop_bgr is None or crop_bgr.size == 0:
         return ""

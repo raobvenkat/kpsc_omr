@@ -1,6 +1,6 @@
 /*
     Attendance Sheets database schema for KPSCOMRICRExtraction
-    Run this script in SSMS against the same database used by OMR_Sheets.py
+    Run this script in SSMS against the same database configured in db_credentials.py
 
     Database : KPSCOMRICRExtraction
     Tables   : attendance_sheet_data_1, attendance_sheet_data2, error_log

@@ -24,7 +24,7 @@ if BASE_DIR not in sys.path:
 import db_credentials
 
 
-APP_TITLE = "KPSC OMR & Attendance Suite"
+APP_TITLE = "KPSC Counter Foil & Nominal Roll Data extraction Suite"
 APP_VERSION = "1.0.0"
 
 
@@ -431,10 +431,10 @@ class MainApplication:
         self.omr_card = ModuleCard(
             cards,
             self.scaler,
-            title="OMR Sheets",
+            title="Counter Foil Sheets",
             subtitle=(
                 "Extract barcode, bubble responses, handwritten register numbers, "
-                "signatures, and QCA booklet data from OMR answer sheets."
+                "signatures, and QCA booklet data from Counter Foil sheets."
             ),
             accent="#00c853",
             command=self.open_omr_module,
@@ -444,9 +444,9 @@ class MainApplication:
         self.attendance_card = ModuleCard(
             cards,
             self.scaler,
-            title="Attendance Sheets",
+            title="Nominal Roll  Sheets",
             subtitle=(
-                "Process Attendance Sheet Type 1 (OMR) and Type 2 (QCAB), "
+                "Process Nominal Roll Sheet Type 1 (OMR) and Type 2 (QCAB), "
                 "validate invigilator signatures, and export to SQL Server."
             ),
             accent="#2979ff",
@@ -588,7 +588,7 @@ class MainApplication:
         module_root.protocol("WM_DELETE_WINDOW", on_close)
 
     def open_omr_module(self) -> None:
-        from OMR_Sheets import VisualOMRViewerDemo
+        from CounterFoilScanning import VisualOMRViewerDemo
 
         self._open_module(
             VisualOMRViewerDemo,
@@ -596,7 +596,7 @@ class MainApplication:
         )
 
     def open_attendance_module(self) -> None:
-        from AttendanceSheets import AttendanceViewerDemo
+        from NominalRolls import AttendanceViewerDemo
 
         self._open_module(
             AttendanceViewerDemo,
