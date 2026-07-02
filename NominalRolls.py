@@ -858,6 +858,17 @@ class AttendanceViewerDemo:
         """, (table_name,))
         return cursor.fetchone()[0] == 1
 
+    def check_column_exists(self, conn, table_name, column_name):
+        cursor = conn.cursor()
+        cursor.execute("""
+        SELECT COUNT(*)
+        FROM INFORMATION_SCHEMA.COLUMNS
+        WHERE TABLE_SCHEMA = 'dbo'
+          AND TABLE_NAME = ?
+          AND COLUMN_NAME = ?
+        """, (table_name, column_name))
+        return cursor.fetchone()[0] == 1
+
     def sheet_exists_in_db(self, cursor, table_name, filename):
         cursor.execute(
             f"SELECT COUNT(*) FROM {table_name} WHERE filename = ?",
@@ -1034,7 +1045,7 @@ class AttendanceViewerDemo:
                 messagebox.showerror(
                     "Error",
                     f"Table '{table_name}' does not exist. "
-                    "Run sql/attendance_sheets_schema.sql in SSMS first.")
+                    "Run sql/NominalRolls.sql in SSMS first.")
                 conn.close()
                 return
 
@@ -1084,7 +1095,7 @@ class AttendanceViewerDemo:
                 messagebox.showerror(
                     "Error",
                     "Table 'error_log' does not exist. "
-                    "Run sql/attendance_sheets_schema.sql in SSMS first.")
+                    "Run sql/NominalRolls.sql in SSMS first.")
                 conn.close()
                 return
 

@@ -1,5 +1,5 @@
 /*
-    Attendance Sheets database schema for KPSCOMRICRExtraction
+    NominalRolls database schema for KPSCOMRICRExtraction
     Run this script in SSMS against the same database configured in db_credentials.py
 
     Database : KPSCOMRICRExtraction
@@ -14,7 +14,7 @@ SET QUOTED_IDENTIFIER ON;
 GO
 
 /* ============================================================
-   TABLE: attendance_sheet_data_1  (Attendance Sheet 1 / OMR)
+   TABLE: attendance_sheet_data_1  (Nominal Roll Sheet 1 / OMR)
    ============================================================ */
 IF OBJECT_ID(N'dbo.attendance_sheet_data_1', N'U') IS NULL
 BEGIN
@@ -42,7 +42,7 @@ BEGIN
 END;
 GO
 
-/* Upgrade an existing Sheet 1 table created by an older version. */
+/* Upgrade an existing Nominal Roll Sheet 1 table created by an older version. */
 IF OBJECT_ID(N'dbo.attendance_sheet_data_1', N'U') IS NOT NULL
    AND COL_LENGTH(N'dbo.attendance_sheet_data_1', N'registration_no') IS NULL
 BEGIN
@@ -52,7 +52,7 @@ END;
 GO
 
 /* ============================================================
-   TABLE: attendance_sheet_data2  (Attendance Sheet 2 / QCAB)
+   TABLE: attendance_sheet_data2  (Nominal Roll Sheet 2 / QCAB)
    ============================================================ */
 IF OBJECT_ID(N'dbo.attendance_sheet_data2', N'U') IS NULL
 BEGIN
@@ -80,7 +80,7 @@ BEGIN
 END;
 GO
 
-/* Upgrade an existing Sheet 2 table created by an older version. */
+/* Upgrade an existing Nominal Roll Sheet 2 table created by an older version. */
 IF OBJECT_ID(N'dbo.attendance_sheet_data2', N'U') IS NOT NULL
    AND COL_LENGTH(N'dbo.attendance_sheet_data2', N'qcab_serial_no') IS NULL
 BEGIN
@@ -246,5 +246,5 @@ BEGIN
 END;
 GO
 
-PRINT 'Attendance Sheets schema and stored procedures created successfully.';
+PRINT 'NominalRolls schema and stored procedures created successfully.';
 GO
