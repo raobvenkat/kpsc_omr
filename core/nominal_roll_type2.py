@@ -180,9 +180,9 @@ def extract_header_codes(img, reader):
         "subject_code": subject_code
     }
 
-def process_nominal_roll2(img_path, reader=None):
+def process_attendance_sheet2(img_path, reader=None):
     """
-    Processes Nominal Roll 2 (QCAB-based) and returns a list of candidate records.
+    Processes Attendance Sheet 2 (QCAB-based) and returns a list of candidate records.
     """
     img = cv2.imread(img_path)
     if img is None:

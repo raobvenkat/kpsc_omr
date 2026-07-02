@@ -2,7 +2,7 @@
 KPSC OMR & Attendance Suite — production launcher.
 
 First launch prompts for SQL Server connection details, stores them securely,
-then presents a hub to open Counter Foil Scanning or Nominal Roll extraction tools.
+then presents a hub to open OMR Sheets or Attendance Sheets extraction tools.
 """
 
 from __future__ import annotations
@@ -754,7 +754,7 @@ class MainApplication:
 
         tk.Label(
             self.title_block,
-            text="Counter Foil and Nominal Roll processing workspace",
+            text="Counter foil and nominal roll processing workspace",
             bg="#101018",
             fg="#8b93a7",
             font=("Segoe UI", fs(10)),
@@ -868,7 +868,7 @@ class MainApplication:
         self.omr_card = ModuleCard(
             self.cards,
             self.scaler,
-            title="Counter Foil Scanning",
+            title="Counter Foil Sheets",
             subtitle=(
                 "Extract barcode, bubble responses, handwritten register numbers, "
                 "signatures, and QCA booklet data from Counter Foil sheets."
@@ -1298,7 +1298,7 @@ class MainApplication:
 
         self._open_module(
             VisualOMRViewerDemo,
-            "Counter Foil Scanning",
+            "OMR ICR OCR Extraction Engine",
         )
 
     def open_attendance_module(self) -> None:
@@ -1306,7 +1306,7 @@ class MainApplication:
 
         self._open_module(
             AttendanceViewerDemo,
-            "Nominal Roll 1 & 2 Extraction",
+            "Attendance Sheet Extraction",
         )
 
 

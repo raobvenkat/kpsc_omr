@@ -209,7 +209,7 @@ BEGIN
         updated_at = SYSUTCDATETIME()
     WHERE id = @ID;
 
-    IF @@ROWCOUNT = 0 THROW 50010, 'Counter Foil record was not found.', 1;
+    IF @@ROWCOUNT = 0 THROW 50010, 'Counter foil record was not found.', 1;
 END;
 GO
 
