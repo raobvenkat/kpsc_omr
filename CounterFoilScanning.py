@@ -208,8 +208,6 @@ def read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw):
     
     img_draw = img.copy()
     detected_digits = []
-    low_bubble_fill = False
-    min_bubble_fill_pct = 100.0
     
     for i in range(b_conf["cols"]):
         cx = int(grid_x + col_start + i * col_spacing)
@@ -232,11 +230,6 @@ def read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw):
         contrast = col_vals_sorted[1][1] - col_vals_sorted[0][1]
         
         is_filled = (avg_unmarked - min_val > 25) and (contrast > 12)
-        if is_filled and avg_unmarked > 0:
-            fill_pct = ((avg_unmarked - min_val) / avg_unmarked) * 100.0
-            min_bubble_fill_pct = min(min_bubble_fill_pct, fill_pct)
-            if fill_pct < 35.0:
-                low_bubble_fill = True
         
         if is_filled:
             detected_digits.append(str(min_idx))
@@ -259,10 +252,7 @@ def read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw):
     x_end_crop = min(w_d, int(grid_x + 580 * scale_x))
     crop_debug = img_draw[y_start_crop:y_end_crop, x_start_crop:x_end_crop]
     
-    if min_bubble_fill_pct > 99.0:
-        min_bubble_fill_pct = None
-
-    return bubble_regno, crop_debug, grid_x, grid_y, align_method, low_bubble_fill, min_bubble_fill_pct
+    return bubble_regno, crop_debug, grid_x, grid_y, align_method
 
 # ──────────────────────────────────────────────────────────
 # DECOUPLED ALIGNMENT & BUBBLE READING (B&W PADDED FILES)
@@ -745,7 +735,7 @@ def process_single_sheet_for_demo(img_path):
         scale_y = scale_x
         
     # 1. Alignment & Bubble Reading
-    bubble_regno, debug_grid_img, grid_x, grid_y, align_method, low_bubble_fill, min_bubble_fill_pct = read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw)
+    bubble_regno, debug_grid_img, grid_x, grid_y, align_method = read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw)
             
     # 2. Handwritten Digit OCR
     handwritten_regno = read_handwritten_regno(img, tpl, scale_x, scale_y, grid_x, grid_y, is_bw)
@@ -781,15 +771,12 @@ def process_single_sheet_for_demo(img_path):
     hw_y1 = int(box_cy + box_h//2 + 5)
     reg_box_crop = img[max(0, hw_y0):min(h, hw_y1), max(0, hw_x0):min(w, hw_x1)]
 
-    whitenerflag = detect_whitener_applied(
-        img, grid_x, grid_y, tpl, scale_x, scale_y,
-        hw_x0, hw_y0, hw_x1, hw_y1
-    )
-
     subject_code, subject_crop = VisualOMRViewerDemo.extract_subject_code(None, img, scale_x, scale_y)
     booklet_sl_no, omr_threshold, booklet_crop = VisualOMRViewerDemo.extract_booklet_number(None, img, scale_x, scale_y)
 
-    is_non_standard = isblack == 1
+    # Whitener flag: True when OMR bubble threshold is below 10%, indicating
+    # correction fluid (whitener) may have been applied on the bubble region.
+    whitenerflag = omr_threshold < 10
 
     final_regno, has_disc, disc_detail = determine_final_regno(bubble_regno, handwritten_regno)
     
@@ -852,9 +839,6 @@ def process_single_sheet_for_demo(img_path):
         "has_disc": has_disc,
         "disc_detail": disc_detail,
         "whitenerflag": whitenerflag,
-        "low_bubble_fill": low_bubble_fill,
-        "min_bubble_fill_pct": min_bubble_fill_pct,
-        "is_non_standard": is_non_standard,
         "cand_signed": cand_signed,
         "cand_ratio": cand_ratio,
         "inv_signed": inv_signed,
@@ -2028,19 +2012,6 @@ class VisualOMRViewerDemo:
         if self.check_column_exists(conn, table_name, "isblack"):
             columns.append("isblack")
             values.append(int(result.get("isblack", 0)))
-
-        if self.check_column_exists(conn, table_name, "low_bubble_fill"):
-            columns.append("low_bubble_fill")
-            values.append(int(bool(result.get("low_bubble_fill", False))))
-
-        if self.check_column_exists(conn, table_name, "min_bubble_fill_pct"):
-            columns.append("min_bubble_fill_pct")
-            pct = result.get("min_bubble_fill_pct")
-            values.append(float(pct) if pct is not None else None)
-
-        if self.check_column_exists(conn, table_name, "is_non_standard"):
-            columns.append("is_non_standard")
-            values.append(int(bool(result.get("is_non_standard", False))))
 
         placeholders = ", ".join(["?"] * len(columns))
         column_sql = ", ".join(columns)

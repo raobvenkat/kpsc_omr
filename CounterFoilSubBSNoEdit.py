@@ -59,7 +59,7 @@ class SubjectBookletDiscrepancy:
     def create_grid_panel(self):
         frame=tk.Frame(self.left)
         frame.pack(fill='x',padx=5)
-        cols=('ID','FileName','Barcode','Subject_Code','Booklet_Sl_No')
+        cols=('ID','FileName','Barcode','Subject_Code','BookletSlNo')
         self.grid=ttk.Treeview(frame,columns=cols,show='headings',height=8)
         for c in cols:
             self.grid.heading(c,text=c)
@@ -109,7 +109,7 @@ class SubjectBookletDiscrepancy:
             cur.execute('EXEC dbo.Sub_CodeAndBookletNoDesc')
             rows=cur.fetchall()
             for r in rows:
-                self.grid.insert('', 'end', values=(r.ID,r.FileName,r.Barcode,r.Subject_Code,r.Booklet_Sl_No))
+                self.grid.insert('', 'end', values=(r.ID,r.FileName,r.Barcode,r.Subject_code,r.BookletSlNo))
             conn.close()
             self.lbl_message.config(text=f'{len(rows)} record(s) loaded.',fg='green')
         except Exception as ex:
