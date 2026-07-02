@@ -811,6 +811,22 @@ class MainApplication:
             cursor="hand2",
         )
 
+        self.reports_btn = tk.Button(
+            self.actions,
+            text="Reports",
+            command=self._open_reports,
+            bg="#1565c0",
+            fg="#ffffff",
+            activebackground="#1976d2",
+            activeforeground="#ffffff",
+            relief="flat",
+            font=("Segoe UI", fs(10), "bold"),
+            padx=px(14),
+            pady=px(6),
+            cursor="hand2",
+        )
+        self.reports_btn.pack(side="left", padx=(0, px(8)))
+
         self.logout_btn = tk.Button(
             self.actions,
             text="Logout",
@@ -1245,6 +1261,37 @@ class MainApplication:
             self.root.lift()
 
         module_root.protocol("WM_DELETE_WINDOW", on_close)
+
+    def _open_reports(self) -> None:
+        try:
+            ok, error = self._validate_database_connection()
+            if not ok:
+                raise RuntimeError(error)
+        except Exception as exc:
+            messagebox.showerror(
+                "Database Not Configured",
+                f"Configure a working database connection before opening Reports.\n\n{exc}",
+            )
+            return
+        if self.current_user is None:
+            if not self._show_login():
+                return
+
+        win = tk.Toplevel(self.root)
+        from DiscrepancyReports import DiscrepancyReports, LOGGED_USER_ID
+        import DiscrepancyReports as _dr_mod
+        if self.current_user is not None:
+            _dr_mod.LOGGED_USER_ID = self.current_user.user_id
+        audit.log("application", "module_open",
+                  details={"module": "DiscrepancyReports"})
+        app = DiscrepancyReports(win)
+
+        def _on_close():
+            audit.log("application", "module_close",
+                      details={"module": "DiscrepancyReports"})
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _on_close)
 
     def open_omr_module(self) -> None:
         from CounterFoilScanning import VisualOMRViewerDemo
