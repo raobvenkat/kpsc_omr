@@ -2,7 +2,16 @@
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
-from db_credentials import get_sql_connection
+import pyodbc
+
+CONNECTION_STRING = (
+    "DRIVER={ODBC Driver 17 for SQL Server};"
+    "SERVER=3.109.160.126;"
+    "DATABASE=KPSCOMRICRExtraction;"
+    "UID=KPSCDev;"
+    "PWD=kpscD5v;"
+    "TrustServerCertificate=yes;"
+)
 
 LOGGED_USER_ID = 1
 SUBJECT_BOX=(30,35,530,130)
@@ -17,7 +26,7 @@ class SubjectBookletDiscrepancy:
         self.create_screen()
 
     def get_connection(self):
-        return get_sql_connection()
+        return pyodbc.connect(CONNECTION_STRING)
 
     def create_screen(self):
         tk.Label(self.root,text='Subject Code & QCA Booklet Serial Number Descripancy',bg='#1976D2',fg='white',font=('Arial',18,'bold')).pack(fill='x')
@@ -59,7 +68,7 @@ class SubjectBookletDiscrepancy:
     def create_grid_panel(self):
         frame=tk.Frame(self.left)
         frame.pack(fill='x',padx=5)
-        cols=('ID','FileName','Barcode','Subject_Code','Booklet_Sl_No')
+        cols=('ID','FileName','Barcode','Subject_Code','BookletSlNo')
         self.grid=ttk.Treeview(frame,columns=cols,show='headings',height=8)
         for c in cols:
             self.grid.heading(c,text=c)
@@ -109,7 +118,7 @@ class SubjectBookletDiscrepancy:
             cur.execute('EXEC dbo.Sub_CodeAndBookletNoDesc')
             rows=cur.fetchall()
             for r in rows:
-                self.grid.insert('', 'end', values=(r.ID,r.FileName,r.Barcode,r.Subject_Code,r.Booklet_Sl_No))
+                self.grid.insert('', 'end', values=(r.ID,r.FileName,r.Barcode,r.Subject_code,r.BookletSlNo))
             conn.close()
             self.lbl_message.config(text=f'{len(rows)} record(s) loaded.',fg='green')
         except Exception as ex:
