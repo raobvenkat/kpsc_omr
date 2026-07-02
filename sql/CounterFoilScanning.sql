@@ -1,5 +1,5 @@
 /*
-    CounterFoilScanning database schema for KPSCOMRICRExtraction.
+    Counter Foil Scanning database schema for KPSCOMRICRExtraction.
     Run this script in SSMS against the same database configured in db_credentials.py.
 
     Tables     : omr_results, ErrorLog
@@ -157,9 +157,9 @@ BEGIN
     WHERE id = @ID;
 
     IF @@ROWCOUNT = 0
-        THROW 50010, 'Counter foil record was not found.', 1;
+        THROW 50010, 'Counter Foil record was not found.', 1;
 END;
 GO
 
-PRINT 'CounterFoilScanning schema and stored procedures created successfully.';
+PRINT 'Counter Foil Scanning schema and stored procedures created successfully.';
 GO

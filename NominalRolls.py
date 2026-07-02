@@ -14,8 +14,8 @@ import audit
 
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from core.nominal_roll_type1 import process_attendance_sheet1
-from core.nominal_roll_type2 import process_attendance_sheet2
+from core.nominal_roll_type1 import process_nominal_roll1
+from core.nominal_roll_type2 import process_nominal_roll2
 from core.nominal_roll import get_invigilator_signature_box as invigilator_box_coords
 
 # Initialize EasyOCR Reader globally once
@@ -29,7 +29,7 @@ def get_ocr_reader():
 class AttendanceViewerDemo:
     def __init__(self, root):
         self.root = root
-        self.root.title("Attendance Sheet Extraction Demo")
+        self.root.title("Nominal Roll 1 & 2 Extraction Demo")
 
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
@@ -72,8 +72,8 @@ class AttendanceViewerDemo:
         self.root.option_add("*TCombobox*Listbox.font", ("Segoe UI", 10))
 
         
-        self.sheet1_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Attendance Sheet1")
-        self.sheet2_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Attendance Sheet2")
+        self.sheet1_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Nominal Roll 1")
+        self.sheet2_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Nominal Roll 2")
         
         self.current_records = []
         self.current_img = None
@@ -600,9 +600,9 @@ class AttendanceViewerDemo:
                 self.root.update_idletasks()
                 
                 if is_type1:
-                    records, header = process_attendance_sheet1(img_path, reader)
+                    records, header = process_nominal_roll1(img_path, reader)
                 else:
-                    records, header = process_attendance_sheet2(img_path, reader)
+                    records, header = process_nominal_roll2(img_path, reader)
                     
                 center_code = header.get("center_code", "")
                 subcenter_code = header.get("subcenter_code", "")
@@ -1016,9 +1016,9 @@ class AttendanceViewerDemo:
     def _process_attendance_data_for_worker(self, img_path, is_type1):
         reader = get_ocr_reader()
         if is_type1:
-            records, header = process_attendance_sheet1(img_path, reader)
+            records, header = process_nominal_roll1(img_path, reader)
         else:
-            records, header = process_attendance_sheet2(img_path, reader)
+            records, header = process_nominal_roll2(img_path, reader)
 
         return {
             "center_code": header.get("center_code", ""),
@@ -1180,7 +1180,7 @@ class AttendanceViewerDemo:
 
     def load_attendance_csv(self):
         self.attendance_csv_records = {}
-        csv_path = os.path.join(self.current_dir, "Attendance_Sheet_Results.csv")
+        csv_path = os.path.join(self.current_dir, "Nominal_Roll_Results.csv")
         if os.path.exists(csv_path):
             import csv
             try:
@@ -1266,9 +1266,9 @@ class AttendanceViewerDemo:
             return
 
         save_path = filedialog.asksaveasfilename(
-            title="Export Attendance Sheet Results",
+            title="Export Nominal Roll Results",
             initialdir=self.current_dir if hasattr(self, "current_dir") else os.getcwd(),
-            initialfile="Attendance_Sheet_Results.csv",
+            initialfile="Nominal_Roll_Results.csv",
             defaultextension=".csv",
             filetypes=[
                 ("Excel CSV", "*.csv"),

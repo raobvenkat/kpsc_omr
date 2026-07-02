@@ -1,5 +1,5 @@
 /*
-    NominalRolls database schema for KPSCOMRICRExtraction
+    Nominal Roll database schema for KPSCOMRICRExtraction
     Run this script in SSMS against the same database configured in db_credentials.py
 
     Database : KPSCOMRICRExtraction
@@ -246,5 +246,5 @@ BEGIN
 END;
 GO
 
-PRINT 'NominalRolls schema and stored procedures created successfully.';
+PRINT 'Nominal Roll schema and stored procedures created successfully.';
 GO

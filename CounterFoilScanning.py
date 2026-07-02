@@ -872,7 +872,7 @@ def process_single_sheet_for_demo(img_path):
 class VisualOMRViewerDemo:
     def __init__(self, root):
         self.root = root
-        self.root.title("OMR ICR OCR Extraction Engine")
+        self.root.title("Counter Foil Scanning")
 
         # Responsive: fill 92% of screen, centered
         sw = self.root.winfo_screenwidth()
@@ -976,7 +976,7 @@ class VisualOMRViewerDemo:
         header.pack_propagate(False)
 
         tk.Label(header,
-                 text="OMR ICR OCR Extraction Engine",
+                 text="Counter Foil Scanning",
                  bg=P, fg=AC,
                  font=("Segoe UI", fs(18), "bold"),
                  anchor="center").pack(fill="both", expand=True)
@@ -1448,7 +1448,7 @@ class VisualOMRViewerDemo:
     def process_selected_sheet(self):
         img_path = self.file_combo.get()
         if not img_path:
-            messagebox.showwarning("Warning", "Please select an OMR sheet first!")
+            messagebox.showwarning("Warning", "Please select a Counter Foil sheet first!")
             return
 
         # filename (basename) is used as the CSV record key
@@ -1699,7 +1699,7 @@ class VisualOMRViewerDemo:
 
         if not filename_to_save:
             if show_msg:
-                messagebox.showwarning("Warning", "No OMR sheet selected!")
+                messagebox.showwarning("Warning", "No Counter Foil sheet selected!")
             return
             
         barcode = self.edit_barcode.get().strip()

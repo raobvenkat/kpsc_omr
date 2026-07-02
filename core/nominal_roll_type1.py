@@ -482,9 +482,9 @@ def extract_header_codes(img, reader):
         "subject_code": subject_code
     }
 
-def process_attendance_sheet1(img_path, reader=None):
+def process_nominal_roll1(img_path, reader=None):
     """
-    Processes Attendance Sheet 1 (OMR-based) and returns a list of candidate records.
+    Processes Nominal Roll 1 (OMR-based) and returns a list of candidate records.
     """
     img = cv2.imread(img_path)
     if img is None:
