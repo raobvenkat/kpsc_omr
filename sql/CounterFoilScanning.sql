@@ -127,14 +127,12 @@ BEGIN
         id AS ID,
         filename AS FileName,
         barcode AS Barcode,
-        subject_code AS Subject_Code,
-        BookletSlNo AS Booklet_Sl_No
+        subject_code AS Subject_code,
+        BookletSlNo
     FROM dbo.omr_results
-    WHERE (
-        ISNULL(LTRIM(RTRIM(subject_code)), N'') = N''
-        OR ISNULL(LTRIM(RTRIM(BookletSlNo)), N'') = N''
-    )
-    AND ISNULL(disc_resolved, 0) = 0
+    WHERE ISNULL(LTRIM(RTRIM(subject_code)), N'') = N''
+       OR ISNULL(LTRIM(RTRIM(BookletSlNo)), N'') = N''
+       OR discrepancy = 1
     ORDER BY id DESC;
 END;
 GO
