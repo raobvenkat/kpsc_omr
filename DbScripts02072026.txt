@@ -1,0 +1,334 @@
+CREATE TABLE [dbo].[ModulesAndScreens](
+	[ScreenID] [float] NOT NULL,
+	[ModuleID] [float] NULL,
+	[ScreenName] [nvarchar](255) NULL,
+	[ScreenDescr] [nvarchar](255) NULL,
+	[ScreenLink] [nvarchar](255) NULL,
+	[ScreenOrder] [float] NULL,
+	[ScreenIcon] [nvarchar](255) NULL,
+	[ScreenType] [nvarchar](255) NULL,
+ CONSTRAINT [PK_ModulesAndScreens] PRIMARY KEY CLUSTERED 
+(
+	[ScreenID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+CREATE TABLE [dbo].[UserGroupM](
+	[GroupID] [int] NOT NULL,
+	[GroupName] [varchar](50) NOT NULL,
+	[GroupDescr] [varchar](100) NULL,
+	[AddDate] [datetime] NOT NULL,
+	[AddUserID] [smallint] NULL,
+	[ModifyDate] [datetime] NULL,
+	[ModifyUserID] [smallint] NULL,
+	[DeleteDate] [datetime] NULL,
+	[SuperUser] [char](1) NOT NULL,
+ CONSTRAINT [PK_UserGroups] PRIMARY KEY CLUSTERED 
+(
+	[GroupID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+ CONSTRAINT [UK_UserGroupM_GroupName] UNIQUE NONCLUSTERED 
+(
+	[GroupName] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+5.  ScreenID refered from UserGroupM Table the structure is below
+USE [KPSCOMRICRExtraction]
+GO
+
+CREATE TABLE [dbo].[Permission](
+	[GroupID] [int] NOT NULL,
+	[ScreenID] [int] NOT NULL,
+	[Grants] [char](5) NOT NULL,
+	[AddUserId] [smallint] NULL,
+	[AddDate] [datetime] NULL,
+ CONSTRAINT [PK_Permission_1] PRIMARY KEY CLUSTERED 
+(
+	[GroupID] ASC,
+	[ScreenID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+ALTER TABLE [dbo].[Permission]  WITH CHECK ADD  CONSTRAINT [FK_Permission_UserGroupM] FOREIGN KEY([GroupID])
+REFERENCES [dbo].[UserGroupM] ([GroupID])
+ON UPDATE CASCADE
+ON DELETE CASCADE
+GO
+
+USE [KPSCOMRICRExtraction]
+GO
+
+/****** Object:  Table [dbo].[CounterFoilEditedDataLog]    Script Date: 02/07/2026 08:43 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[CounterFoilEditedDataLog](
+	[CounterFoilEditLogID] [int] IDENTITY(1,1) NOT NULL,
+	[id] [int] NULL,
+	[filename] [nvarchar](500) NOT NULL,
+	[barcode] [nvarchar](100) NULL,
+	[bubble_regno] [nvarchar](50) NULL,
+	[handwritten_regno] [nvarchar](50) NULL,
+	[final_regno] [nvarchar](50) NULL,
+	[discrepancy] [bit] NULL,
+	[discrepancy_detail] [nvarchar](max) NULL,
+	[candidate_signed] [nvarchar](10) NULL,
+	[invigilator_signed] [nvarchar](10) NULL,
+	[subject_code] [nvarchar](100) NULL,
+	[BookletSlNo] [nvarchar](100) NULL,
+	[created_at] [datetime] NULL,
+	[omr_threshold] [varchar](10) NULL,
+	[whitenerflag] [bit] NOT NULL,
+	[isblack] [bit] NOT NULL,
+	[ModifiedDate] [datetime] NULL,
+	[ModifiedUserID] [int] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[CounterFoilEditLogID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[filename] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+USE [KPSCOMRICRExtraction]
+GO
+
+/****** Object:  Table [dbo].[CounterFoilEditedData]    Script Date: 02/07/2026 08:43 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[CounterFoilEditedData](
+	[id] [int] IDENTITY(1,1) NOT NULL,
+	[filename] [nvarchar](500) NOT NULL,
+	[barcode] [nvarchar](100) NULL,
+	[bubble_regno] [nvarchar](50) NULL,
+	[handwritten_regno] [nvarchar](50) NULL,
+	[final_regno] [nvarchar](50) NULL,
+	[discrepancy] [bit] NULL,
+	[discrepancy_detail] [nvarchar](max) NULL,
+	[candidate_signed] [nvarchar](10) NULL,
+	[invigilator_signed] [nvarchar](10) NULL,
+	[subject_code] [nvarchar](100) NULL,
+	[BookletSlNo] [nvarchar](100) NULL,
+	[created_at] [datetime] NULL,
+	[omr_threshold] [varchar](10) NULL,
+	[whitenerflag] [bit] NOT NULL,
+	[isblack] [bit] NOT NULL,
+	[ModifiedDate] [datetime] NULL,
+	[ModifiedUserID] [int] NULL,
+PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+UNIQUE NONCLUSTERED 
+(
+	[filename] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+USE [KPSCOMRICRExtraction]
+GO
+
+/****** Object:  Table [dbo].[ErrorLog]    Script Date: 02/07/2026 08:44 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[ErrorLog](
+	[ErrorID] [numeric](18, 0) IDENTITY(1,1) NOT FOR REPLICATION NOT NULL,
+	[ErrorScreen] [varchar](100) NOT NULL,
+	[ErrorModule] [varchar](100) NOT NULL,
+	[ErrorText] [varchar](8000) NOT NULL,
+	[ErrorTime] [datetime] NOT NULL,
+ CONSTRAINT [PK_ErrorLog] PRIMARY KEY CLUSTERED 
+(
+	[ErrorID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, FILLFACTOR = 90, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+USE [KPSCOMRICRExtraction]
+GO
+
+/****** Object:  Table [dbo].[ExportReport]    Script Date: 02/07/2026 08:46 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[ExportReport](
+	[ReportID] [int] NOT NULL,
+	[ReportName] [varchar](100) NULL,
+	[ProcedureName] [varchar](100) NULL,
+	[Parametres] [varchar](100) NULL,
+ CONSTRAINT [PK_ExportReport] PRIMARY KEY CLUSTERED 
+(
+	[ReportID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY]
+GO
+
+USE [KPSC_02072026]
+GO
+
+/****** Object:  StoredProcedure [dbo].[USP_UpdateCounterFoilEditedData]    Script Date: 02/07/2026 08:59 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE PROCEDURE [dbo].[USP_UpdateCounterFoilEditedData]
+(
+      @ID BIGINT,
+      @SubjectCode VARCHAR(50),
+      @BookletSlNo VARCHAR(50),
+      @ModifiedUserID INT
+)
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+    
+    BEGIN TRY
+
+        IF EXISTS
+        (
+            SELECT 1
+            FROM CounterFoilEditedData
+            WHERE ID=@ID
+        )
+        BEGIN
+
+             INSERT INTO CounterFoilEditedDataLog ([id]
+                  ,[filename]
+                  ,[barcode]
+                  ,[bubble_regno]
+                  ,[handwritten_regno]
+                  ,[final_regno]
+                  ,[discrepancy]
+                  ,[discrepancy_detail]
+                  ,[candidate_signed]
+                  ,[invigilator_signed]
+                  ,[subject_code]
+                  ,[BookletSlNo]
+                  ,[created_at]
+                  ,[omr_threshold]
+                  ,[whitenerflag]
+                  ,[isblack]
+                  ,[ModifiedDate]
+                  ,[ModifiedUserID])
+             
+             SELECT
+                 [id],[filename]
+                  ,[barcode]
+                  ,[bubble_regno]
+                  ,[handwritten_regno]
+                  ,[final_regno]
+                  ,[discrepancy]
+                  ,[discrepancy_detail]
+                  ,[candidate_signed]
+                  ,[invigilator_signed]
+                  ,[subject_code]
+                  ,[BookletSlNo]
+                  ,[created_at]
+                  ,[omr_threshold]
+                  ,[whitenerflag]
+                  ,[isblack]
+                  ,[ModifiedDate]
+                  ,[ModifiedUserID]
+             FROM CounterFoilEditedData
+             WHERE ID=@ID
+            
+             UPDATE CounterFoilEditedData
+             SET
+                 [subject_code]=@SubjectCode,
+                 BookletSlNo=@BookletSlNo,
+                 ModifiedDate=GETDATE(),
+                 [ModifiedUserID]=@ModifiedUserID
+             WHERE ID=@ID
+
+        END
+        ELSE
+        BEGIN
+
+             INSERT INTO CounterFoilEditedData
+             ([id],[filename]
+                  ,[barcode]
+                  ,[bubble_regno]
+                  ,[handwritten_regno]
+                  ,[final_regno]
+                  ,[discrepancy]
+                  ,[discrepancy_detail]
+                  ,[candidate_signed]
+                  ,[invigilator_signed]
+                  ,[subject_code]
+                  ,[BookletSlNo]
+                  ,[created_at]
+                  ,[omr_threshold]
+                  ,[whitenerflag]
+                  ,[isblack]
+                  ,[ModifiedDate]
+                  ,[ModifiedUserID]
+                  )
+             SELECT
+                 [id]
+                  ,[filename]
+                  ,[barcode]
+                  ,[bubble_regno]
+                  ,[handwritten_regno]
+                  ,[final_regno]
+                  ,[discrepancy]
+                  ,[discrepancy_detail]
+                  ,[candidate_signed]
+                  ,[invigilator_signed]
+                  ,@SubjectCode
+                  ,@BookletSlNo
+                  ,[created_at]
+                  ,[omr_threshold]
+                  ,[whitenerflag]
+                  ,[isblack]
+                  ,GETDATE(), @ModifiedUserID
+                                                  
+             FROM OMR_Results
+             WHERE ID=@ID
+
+        END
+
+    END TRY
+
+    BEGIN CATCH
+
+         --INSERT INTO ErrorLog
+         --(
+         --    ErrorMessage,
+         --    ErrorDate
+         --)
+         --VALUES
+         --(
+         --    ERROR_MESSAGE(),
+         --    GETDATE()
+         --)
+
+         --THROW;
+
+    END CATCH
+
+END
+GO
+
