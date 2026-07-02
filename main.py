@@ -903,22 +903,31 @@ class MainApplication:
         # ── ROW 2: Discrepancies ─────────────────────────────────
         self._disc_combo, self._disc_open_btn = _combo_row(
             panel_body,
-            "DISCRIPANCIES",
+            "DISCREPANCIES",
             "discrepancy_var",
             [
-                "Subject Code & Booklet Serial No Descripancy",
-                "Barcode Descripancy",
-                "Written RegNo Descripancy",
-                "OMR RegNo Descripancy",
+                "Subject Code & Booklet Serial No Discrepancy",
+                "Barcode Discrepancy",
+                "Written RegNo Discrepancy",
+                "OMR RegNo Discrepancy",
                 "Whiter Used in the boubles",
                 "Boubles marked <35% Threshold marking",
-                "Candidate's Signature Descripancy",
-                "Invigilator's Signature Descripancy",
+                "Candidate's Signature Discrepancy",
+                "Invigilator's Signature Discrepancy",
                 "Non standard OMR sheet used",
-                "Not signed by candidate in Nominal Rolll Descripancy",
-                "Not signed by Invigilator in Nominal Rolll Descripancy",
+                "Not signed by candidate in Nominal Rolll Discrepancy",
+                "Not signed by Invigilator in Nominal Rolll Discrepancy",
             ],
             self._on_discrepancy_selected,
+        )
+
+        # ── ROW 3: Download Reports (Audit Export + Discrepancy Reports)
+        self._download_combo, self._download_open_btn = _combo_row(
+            panel_body,
+            "DOWNLOAD REPORTS",
+            "download_reports_var",
+            ["Audit Export", "Discrepancy Reports"],
+            self._on_download_report_selected,
         )
 
         # ── FOOTER ────────────────────────────────────────────────
@@ -1012,22 +1021,19 @@ class MainApplication:
             self._title_lbl.configure(font=("Segoe UI", fs(20), "bold"))
             self._subtitle_lbl.configure(font=("Segoe UI", fs(10)))
 
-        # ── Launch panel size & position ─────────────────────────
-        panel_w = max(360, min(560, width - px(80)))
-        panel_h = max(240, min(320, int(height * 0.38)))
+        # ── Launch panel size & position (responsive) ────────────
+        # Compute a target size but place the panel using relative sizing
+        panel_w = max(360, min(800, width - px(48)))
+        panel_h = max(320, min(int(height * 0.9), int(height * 0.75)))
 
-        # Update combo widths based on panel width
-        combo_inner_w = max(20, (panel_w - px(56) - px(80)) // px(8))
-        try:
-            self._extract_combo.configure(width=combo_inner_w)
-            self._disc_combo.configure(width=combo_inner_w)
-        except Exception:
-            pass
+        relwidth = max(0.5, min(0.98, panel_w / max(1, width)))
+        relheight = max(0.35, min(0.95, panel_h / max(1, height)))
 
+        # Place the launch panel responsively so it adapts to window size
         self.launch_panel.place(
             in_=self.center,
-            relx=0.5, rely=0.46, anchor="center",
-            width=panel_w, height=panel_h,
+            relx=0.5, rely=0.5, anchor="center",
+            relwidth=relwidth, relheight=relheight,
         )
 
         # ── Footer wraplength ─────────────────────────────────────
@@ -1052,11 +1058,51 @@ class MainApplication:
 
         self.root.after(100, lambda: self.discrepancy_var.set("Select..."))
 
-        if selection == "Subject Code & Booklet Serial No Descripancy":
+        if selection == "Subject Code & Booklet Serial No Discrepancy":
             self.open_subject_booklet_discrepancy()
             return
 
         self.open_pending_discrepancy(selection)
+
+    def _on_download_report_selected(self, _event=None) -> None:
+        selection = self.download_reports_var.get()
+        if not selection or selection == "Select...":
+            return
+
+        # Reset to placeholder
+        self.root.after(100, lambda: self.download_reports_var.set("Select..."))
+
+        if selection == "Audit Export":
+            self._export_audit_logs()
+            return
+
+        if selection == "Discrepancy Reports":
+            # Open the DiscrepancyReports module
+            try:
+                ok, error = self._validate_database_connection()
+                if not ok:
+                    raise RuntimeError(error)
+            except Exception as exc:
+                messagebox.showerror(
+                    "Database Not Configured",
+                    f"Configure a working database connection first.\n\n{exc}",
+                )
+                return
+
+            if self.current_user is None:
+                if not self._show_login():
+                    return
+
+            win = tk.Toplevel(self.root)
+            import DiscrepancyReports as _dr_mod
+            _dr_mod.LOGGED_USER_ID = self.current_user.user_id if self.current_user else 1
+            audit.log("application", "module_open", details={"module": "DiscrepancyReports"})
+            app = _dr_mod.DiscrepancyReports(win)
+            def _on_close():
+                audit.log("application", "module_close", details={"module": "DiscrepancyReports"})
+                win.destroy()
+            win.protocol("WM_DELETE_WINDOW", _on_close)
+            return
 
     def _refresh_db_status(self) -> None:
         try:
@@ -1213,10 +1259,8 @@ class MainApplication:
             fg="#00e676",
         )
         self.user_master_btn.config(state="normal" if user.is_admin else "disabled")
-        if user.is_admin:
-            self.audit_export_btn.pack(side="left", padx=(0, self.scaler.px(6)), before=self.logout_btn)
-        else:
-            self.audit_export_btn.pack_forget()
+        # Audit export is now available through the Download Reports combo
+        # (do not show header button separately)
 
     def _logout(self) -> None:
         audit.log("authentication", "logout")

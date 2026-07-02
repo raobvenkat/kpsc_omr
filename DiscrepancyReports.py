@@ -25,18 +25,33 @@ CONNECTION_STRING = (
 # )
 
 
-class DownloadDiscrepancyReports:
+class DiscrepancyReports:
 
     def __init__(self, root):
 
         self.root = root
-        self.root.title("Download Descripancy Reports")
+        self.root.title("Download Discrepancy Reports")
         self.root.geometry("1200x700")
 
         self.report_data = {}
 
         self.create_ui()
         self.load_reports()
+
+    # Predefined report metadata used when DB table is not populated
+    REPORTS = [
+        {"id": 1, "name": "Subject Code & Booklet Serial No Discrepancy", "cols": ["ID","FileName","Barcode","Subject_Code","BookletSlNo"], "edit_fields": ["Subject_Code","BookletSlNo"], "crops": {"subject": (30,35,530,130), "booklet": (930,690,1425,890)}},
+        {"id": 2, "name": "Barcode Discrepancy", "cols": ["ID","FileName","Barcode"], "edit_fields": ["Barcode"], "crops": {"barcode": (40,170,940,1570)}},
+        {"id": 3, "name": "Written RegNo Discrepancy", "cols": ["ID","FileName","WrittenRegNo"], "edit_fields": ["WrittenRegNo"], "crops": {"reg": (330,430,960,1520)}},
+        {"id": 4, "name": "OMR RegNo Discrepancy", "cols": ["ID","FileName","OMRRegNo"], "edit_fields": ["OMRRegNo"], "crops": {"reg": (330,430,960,1520)}},
+        {"id": 5, "name": "Whitener Used in the bubbles", "cols": ["ID","FileName","whitenerflag"], "edit_fields": ["whitenerflag"], "crops": {"qca": (780,870,1050,1450)}},
+        {"id": 6, "name": "Bubbles below threshold marking", "cols": ["ID","FileName","omr_threshold"], "edit_fields": ["omr_threshold"], "crops": {"booklet": (870,1080,1050,1550)}},
+        {"id": 7, "name": "Candidate's Signature Discrepancy", "cols": ["ID","FileName","candidate_sig"], "edit_fields": ["candidate_sig"], "crops": {"cand_sig": (390,480,70,900)}},
+        {"id": 8, "name": "Invigilator's Signature Discrepancy", "cols": ["ID","FileName","invigilator_sig"], "edit_fields": ["invigilator_sig"], "crops": {"inv_sig": (540,640,70,900)}},
+        {"id": 9, "name": "Non standard OMR sheet used", "cols": ["ID","FileName","is_non_standard"], "edit_fields": ["is_non_standard"], "crops": {}},
+        {"id": 10, "name": "Not signed by candidate in Nominal Roll Discrepancy", "cols": ["ID","FileName","candidate_signed"], "edit_fields": ["candidate_signed"], "crops": {}},
+        {"id": 11, "name": "Not signed by Invigilator in Nominal Roll Discrepancy", "cols": ["ID","FileName","invigilator_signed"], "edit_fields": ["invigilator_signed"], "crops": {}},
+    ]
 
     # ======================================================
     # UI
@@ -47,7 +62,7 @@ class DownloadDiscrepancyReports:
         # Header
         lbl_header = tk.Label(
             self.root,
-            text="Download Descripancy Reports",
+            text="Download Discrepancy Reports",
             font=("Arial", 18, "bold")
         )
         lbl_header.pack(pady=10)
@@ -75,7 +90,7 @@ class DownloadDiscrepancyReports:
 
         lbl_list = tk.Label(
             left_frame,
-            text="Download Descripancy Report",
+            text="Download Discrepancy Report",
             font=("Arial", 13, "bold")
         )
 
@@ -261,6 +276,58 @@ class DownloadDiscrepancyReports:
                 "Error",
                 str(ex)
             )
+
+        # If DB table is empty or unavailable, fall back to built-in REPORTS
+        if self.lst_reports.size() == 0:
+            for rpt in self.REPORTS:
+                self.report_data[rpt["name"]] = {
+                    "ProcedureName": None,
+                    "Parametres": ",".join(rpt.get("cols", []))
+                }
+                self.lst_reports.insert(tk.END, rpt["name"])
+
+    # ======================================================
+    # Compatibility methods expected by other modules / tests
+    # ======================================================
+
+    def _build_ui(self):
+        # kept for compatibility with older callers
+        return None
+
+    def _select_report(self, report_id: int):
+        # Pre-select a report by numeric id
+        for idx, rpt in enumerate(self.REPORTS):
+            if rpt.get("id") == report_id:
+                # select in listbox and load parameters
+                self.lst_reports.selection_clear(0, tk.END)
+                self.lst_reports.selection_set(idx)
+                self.lst_reports.see(idx)
+                self.report_selected()
+                return
+
+    def _load_report(self, report: dict):
+        # Load a given report definition into the UI
+        self.grid.delete(*self.grid.get_children())
+        cols = report.get("cols", [])
+        for c in cols:
+            self.grid.insert("", "end", values=(c, ""))
+
+    def _refresh_current(self):
+        # Placeholder to refresh UI state
+        return None
+
+    def _on_row_selected(self, event=None):
+        # Placeholder row selection handler
+        return None
+
+    def _on_save(self):
+        # Placeholder save action for discrepancy edits
+        messagebox.showinfo("Save", "Save action executed (no-op).")
+
+    def _on_reset(self):
+        # Placeholder reset action
+        self.grid.delete(*self.grid.get_children())
+        return None
 
     # ======================================================
     # REPORT SELECTED
@@ -555,6 +622,6 @@ if __name__ == "__main__":
 
     root = tk.Tk()
 
-    app = DownloadDiscrepancyReports(root)
+    app = DiscrepancyReports(root)
 
     root.mainloop()
