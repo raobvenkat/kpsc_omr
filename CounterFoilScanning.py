@@ -6,6 +6,7 @@
 import os
 import glob
 import sys
+import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 try:
@@ -2050,103 +2051,186 @@ class VisualOMRViewerDemo:
             if fn:
                 self.set_sheet_status(fn, saved_db="imported")
 
+    def _show_processing_dialog(self):
+        if getattr(self, "_processing_dialog", None):
+            return
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Processing")
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+        dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+        dialog.configure(bg="#1c1c22")
+
+        tk.Label(
+            dialog,
+            text="Processing data...\nPlease do not click anything until the operation is complete.",
+            bg="#1c1c22",
+            fg="#ffffff",
+            font=("Segoe UI", 11, "bold"),
+            justify="center",
+            padx=28,
+            pady=18).pack(fill="both", expand=True)
+
+        bar = ttk.Progressbar(dialog, mode="indeterminate", length=260)
+        bar.pack(padx=28, pady=(0, 20))
+        bar.start(12)
+
+        dialog.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - dialog.winfo_width()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - dialog.winfo_height()) // 2
+        dialog.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        dialog.grab_set()
+        self.root.config(cursor="wait")
+        self._processing_dialog = dialog
+        self._processing_bar = bar
+
+    def _close_processing_dialog(self):
+        dialog = getattr(self, "_processing_dialog", None)
+        if dialog:
+            try:
+                dialog.grab_release()
+                dialog.destroy()
+            except tk.TclError:
+                pass
+        self._processing_dialog = None
+        self._processing_bar = None
+        self.root.config(cursor="")
+
+    def _set_bulk_controls_state(self, state):
+        for attr in ("All_btn", "export_btn", "prev_btn", "next_btn"):
+            widget = getattr(self, attr, None)
+            if widget:
+                try:
+                    widget.config(state=state)
+                except tk.TclError:
+                    pass
+
+    def _run_on_ui(self, callback, *args, **kwargs):
+        self.root.after(0, lambda: callback(*args, **kwargs))
+
     def process_all_sheets_to_mssql(self):
         if not self.omr_dir or not os.path.exists(self.omr_dir):
             messagebox.showerror("Error", "Invalid folder path!")
             return
         
-        image_paths = self.image_paths  # ✅ already built from GUI folder
+        image_paths = list(self.image_paths)  # already built from GUI folder
         
         if not image_paths:
             messagebox.showwarning("Warning", "No images found in selected folder!")
             return
-    
-        try:
-            conn = self.get_sql_connection()
-            cursor = conn.cursor()
-    
-            table_name = "omr_results"
-    
-            # ✅ Check if table exists
-            cursor.execute("""
-            SELECT COUNT(*) 
-            FROM INFORMATION_SCHEMA.TABLES 
-            WHERE TABLE_NAME = ?
-            """, (table_name,))
-            
-            if cursor.fetchone()[0] == 0:
-                messagebox.showerror("Error", f"Table '{table_name}' does not exist!")
-                conn.close()
-                return
-    
-            total = len(image_paths)
-            processed_count = 0
-            self._init_status_grid()
-            self.progress["value"] = 0
-            self.progress["maximum"] = total
-            if hasattr(self, "export_btn"):
-                self.export_btn.config(state="disabled")
-            
-            for i, img_path in enumerate(image_paths, 1):
-                filename = os.path.basename(img_path)
 
-                self.set_sheet_status(filename, extracted="pending", saved_db="pending")
-                self.status_lbl.config(
-                    text=f"Processing {i}/{total} — {filename}",
-                    foreground="#ffeb3b")
-                self.root.update_idletasks()
+        if getattr(self, "_bulk_processing", False):
+            return
 
-                try:
-                    res = process_single_sheet_for_demo(img_path)
-                    if not res:
-                        self.set_sheet_status(
-                            filename, extracted="error", saved_db="error")
-                        continue
+        self._bulk_processing = True
+        total = len(image_paths)
+        processed_count = 0
+        self._init_status_grid()
+        self.progress["value"] = 0
+        self.progress["maximum"] = total
+        self._set_bulk_controls_state("disabled")
+        self._show_processing_dialog()
 
-                    extracted = self._extracted_status_from_result(res)
-                    self.omr_csv_records[filename] = self.build_export_row_from_result(res)
-                    processed_count += 1
+        def worker():
+            conn = None
+            processed = 0
+            failed = 0
+            try:
+                conn = self.get_sql_connection()
+                cursor = conn.cursor()
+                table_name = "omr_results"
+                cursor.execute("""
+                SELECT COUNT(*)
+                FROM INFORMATION_SCHEMA.TABLES
+                WHERE TABLE_NAME = ?
+                """, (table_name,))
 
-                    cursor.execute(
-                        f"SELECT COUNT(*) FROM {table_name} WHERE filename = ?",
-                        (res["filename"],)
-                    )
-                    if cursor.fetchone()[0] > 0:
-                        self.set_sheet_status(
-                            filename, extracted=extracted, saved_db="imported")
-                        continue
+                if cursor.fetchone()[0] == 0:
+                    raise RuntimeError(f"Table '{table_name}' does not exist!")
 
-                    self.insert_omr_result_row(conn, cursor, table_name, res)
-                    self.set_sheet_status(
-                        filename, extracted=extracted, saved_db="imported")
+                for i, img_path in enumerate(image_paths, 1):
+                    filename = os.path.basename(img_path)
+                    self._run_on_ui(
+                        self._update_counterfoil_bulk_progress,
+                        i, total, filename, "pending", "pending")
 
-                except Exception as e:
-                    self.set_sheet_status(
-                        filename, extracted="error", saved_db="error")
-                    print(f"Error processing {filename}: {e}")
+                    try:
+                        res = process_single_sheet_for_demo(img_path)
+                        if not res:
+                            failed += 1
+                            self._run_on_ui(
+                                self._update_counterfoil_bulk_progress,
+                                i, total, filename, "error", "error")
+                            continue
 
-                self.progress["value"] = i
-                self.root.update_idletasks()
+                        extracted = self._extracted_status_from_result(res)
+                        self.omr_csv_records[filename] = self.build_export_row_from_result(res)
+                        processed += 1
 
-            conn.commit()
-            conn.close()
+                        cursor.execute(
+                            f"SELECT COUNT(*) FROM {table_name} WHERE filename = ?",
+                            (res["filename"],)
+                        )
+                        if cursor.fetchone()[0] == 0:
+                            self.insert_omr_result_row(conn, cursor, table_name, res)
 
-            audit.log("counter_foil", "bulk_database_import",
-                      details={"total": total, "processed": processed_count})
+                        self._run_on_ui(
+                            self._update_counterfoil_bulk_progress,
+                            i, total, filename, extracted, "imported")
 
-            self._refresh_status_summary()
-            if hasattr(self, "export_btn") and processed_count > 0:
-                self.export_btn.config(state="normal")
-            self.status_lbl.config(
-                text="✅ All sheets processed & saved to MSSQL",
-                foreground="#00e676")
-            messagebox.showinfo("Success",
-                "All sheets processed and saved to database!")
-    
-        except Exception as e:
-            audit.log("counter_foil", "bulk_database_import", outcome="failed",
-                      details={"error": str(e)})
-            messagebox.showerror("Database Error", str(e))
+                    except Exception as e:
+                        failed += 1
+                        print(f"Error processing {filename}: {e}")
+                        self._run_on_ui(
+                            self._update_counterfoil_bulk_progress,
+                            i, total, filename, "error", "error")
+
+                conn.commit()
+                audit.log("counter_foil", "bulk_database_import",
+                          details={"total": total, "processed": processed, "errors": failed})
+                self._run_on_ui(self._finish_counterfoil_bulk_processing, processed, failed, None)
+
+            except Exception as e:
+                audit.log("counter_foil", "bulk_database_import", outcome="failed",
+                          details={"error": str(e)})
+                self._run_on_ui(self._finish_counterfoil_bulk_processing, processed, failed, e)
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+
+        threading.Thread(target=worker, name="counterfoil-bulk-worker", daemon=True).start()
+
+    def _update_counterfoil_bulk_progress(self, index, total, filename, extracted, saved_db):
+        self.set_sheet_status(filename, extracted=extracted, saved_db=saved_db)
+        self.status_lbl.config(
+            text=f"Processing {index}/{total} - {filename}",
+            foreground="#ffeb3b")
+        self.progress["value"] = index
+
+    def _finish_counterfoil_bulk_processing(self, processed_count, failed_count, error):
+        self._bulk_processing = False
+        self._close_processing_dialog()
+        self._refresh_status_summary()
+        self._set_bulk_controls_state("normal")
+        if hasattr(self, "export_btn") and processed_count <= 0:
+            self.export_btn.config(state="disabled")
+
+        if error:
+            self.status_lbl.config(text=f"Database Error: {error}", foreground="#ff3d00")
+            messagebox.showerror("Database Error", str(error))
+            return
+
+        self.status_lbl.config(
+            text="All sheets processed and saved to MSSQL",
+            foreground="#00e676")
+        messagebox.showinfo(
+            "Success",
+            f"Processed: {processed_count}/{self.progress['maximum']}\n"
+            f"Errors: {failed_count}")
 
     
   

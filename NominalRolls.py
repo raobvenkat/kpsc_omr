@@ -3,6 +3,7 @@ import glob
 import sys
 import ssl
 ssl._create_default_https_context = ssl._create_unverified_context
+import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import cv2
@@ -954,6 +955,80 @@ class AttendanceViewerDemo:
                     reg_val,
                 ))
 
+    def _show_processing_dialog(self):
+        if getattr(self, "_processing_dialog", None):
+            return
+
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Processing")
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+        dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+        dialog.configure(bg="#1c1c22")
+
+        tk.Label(
+            dialog,
+            text="Processing data...\nPlease do not click anything until the operation is complete.",
+            bg="#1c1c22",
+            fg="#ffffff",
+            font=("Segoe UI", 11, "bold"),
+            justify="center",
+            padx=28,
+            pady=18).pack(fill="both", expand=True)
+
+        bar = ttk.Progressbar(dialog, mode="indeterminate", length=260)
+        bar.pack(padx=28, pady=(0, 20))
+        bar.start(12)
+
+        dialog.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - dialog.winfo_width()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - dialog.winfo_height()) // 2
+        dialog.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+        dialog.grab_set()
+        self.root.config(cursor="wait")
+        self._processing_dialog = dialog
+        self._processing_bar = bar
+
+    def _close_processing_dialog(self):
+        dialog = getattr(self, "_processing_dialog", None)
+        if dialog:
+            try:
+                dialog.grab_release()
+                dialog.destroy()
+            except tk.TclError:
+                pass
+        self._processing_dialog = None
+        self._processing_bar = None
+        self.root.config(cursor="")
+
+    def _set_bulk_controls_state(self, state):
+        for attr in ("process_all_btn", "export_btn", "prev_btn", "next_btn"):
+            widget = getattr(self, attr, None)
+            if widget:
+                try:
+                    widget.config(state=state)
+                except tk.TclError:
+                    pass
+
+    def _run_on_ui(self, callback, *args, **kwargs):
+        self.root.after(0, lambda: callback(*args, **kwargs))
+
+    def _process_attendance_data_for_worker(self, img_path, is_type1):
+        reader = get_ocr_reader()
+        if is_type1:
+            records, header = process_attendance_sheet1(img_path, reader)
+        else:
+            records, header = process_attendance_sheet2(img_path, reader)
+
+        return {
+            "center_code": header.get("center_code", ""),
+            "subcenter_code": header.get("subcenter_code", ""),
+            "subject_code": header.get("subject_code", ""),
+            "invigilator_signed": int(header.get("invigilator_signed", 0)),
+            "has_qcab_column": True,
+            "records": records
+        }
+
     def process_all_sheets_to_mssql(self):
         files = list(self.file_combo["values"])
         if not files:
@@ -969,231 +1044,139 @@ class AttendanceViewerDemo:
         table_name = "attendance_sheet_data_1" if is_type1 else "attendance_sheet_data2"
         sheet_type_label = "Nominal Roll 1 (OMR)" if is_type1 else "Nominal Roll 2 (QCAB)"
 
-        try:
-            conn = self.get_sql_connection()
-            cursor = conn.cursor()
+        if getattr(self, "_bulk_processing", False):
+            return
 
-            # Auto-upgrade schema if table exists but doesn't have registration_no
-            if self.check_table_exists(conn, "attendance_sheet_data_1"):
-                cursor.execute("""
-                SELECT COUNT(*) FROM sys.columns 
-                WHERE object_id = OBJECT_ID(N'dbo.attendance_sheet_data_1') 
-                  AND name = 'registration_no'
-                """)
-                if cursor.fetchone()[0] == 0:
-                    try:
-                        cursor.execute("ALTER TABLE dbo.attendance_sheet_data_1 ADD registration_no NVARCHAR(50) NULL")
-                        conn.commit()
-                        cursor.execute("""
-                        CREATE OR ALTER PROCEDURE dbo.sp_insert_attendance_sheet_data_1
-                            @filename           NVARCHAR(500),
-                            @center_code        NVARCHAR(50) = NULL,
-                            @subcenter_code     NVARCHAR(50) = NULL,
-                            @subject_code       NVARCHAR(50) = NULL,
-                            @invigilator_signed BIT = 0,
-                            @row_number         INT,
-                            @status             NVARCHAR(50) = NULL,
-                            @signature_present  BIT = 0,
-                            @omr_no             NVARCHAR(50) = NULL,
-                            @registration_no    NVARCHAR(50) = NULL
-                        AS
-                        BEGIN
-                            SET NOCOUNT ON;
+        self._bulk_processing = True
+        total = len(files)
+        self._init_status_grid()
+        self.progress["value"] = 0
+        self.progress["maximum"] = total
+        self._set_bulk_controls_state("disabled")
+        self._show_processing_dialog()
 
-                            IF EXISTS (
-                                SELECT 1
-                                FROM dbo.attendance_sheet_data_1
-                                WHERE filename = @filename
-                                  AND row_number = @row_number
-                            )
-                            BEGIN
-                                RETURN;
-                            END;
-
-                            INSERT INTO dbo.attendance_sheet_data_1 (
-                                filename,
-                                center_code,
-                                subcenter_code,
-                                subject_code,
-                                invigilator_signed,
-                                row_number,
-                                status,
-                                signature_present,
-                                omr_no,
-                                registration_no
-                            )
-                            VALUES (
-                                @filename,
-                                @center_code,
-                                @subcenter_code,
-                                @subject_code,
-                                @invigilator_signed,
-                                @row_number,
-                                @status,
-                                @signature_present,
-                                @omr_no,
-                                @registration_no
-                            );
-                        END;
-                        """)
-                        conn.commit()
-                    except Exception as ex:
-                        print(f"Failed to auto-upgrade database schema: {ex}")
-                        conn.rollback()
-
-            if not self.check_table_exists(conn, table_name):
-                messagebox.showerror(
-                    "Error",
-                    f"Table '{table_name}' does not exist. "
-                    "Run sql/NominalRolls.sql in SSMS first.")
-                conn.close()
-                return
-
-            if not is_type1 and not self.check_column_exists(
-                    conn, "attendance_sheet_data2", "qcab_serial_no"):
-                cursor.execute(
-                    "ALTER TABLE dbo.attendance_sheet_data2 "
-                    "ADD qcab_serial_no NVARCHAR(50) NULL")
-                conn.commit()
-
-            if not is_type1:
-                cursor.execute("""
-                    CREATE OR ALTER PROCEDURE dbo.sp_insert_attendance_sheet_data2
-                        @filename NVARCHAR(500),
-                        @center_code NVARCHAR(50) = NULL,
-                        @subcenter_code NVARCHAR(50) = NULL,
-                        @subject_code NVARCHAR(50) = NULL,
-                        @invigilator_signed BIT = 0,
-                        @row_number INT,
-                        @status NVARCHAR(50) = NULL,
-                        @signature_present BIT = 0,
-                        @registration_no NVARCHAR(50) = NULL,
-                        @qcab_serial_no NVARCHAR(50) = NULL
-                    AS
-                    BEGIN
-                        SET NOCOUNT ON;
-                        IF EXISTS (
-                            SELECT 1 FROM dbo.attendance_sheet_data2
-                            WHERE filename = @filename
-                              AND row_number = @row_number
-                        ) RETURN;
-                        INSERT INTO dbo.attendance_sheet_data2 (
-                            filename, center_code, subcenter_code, subject_code,
-                            invigilator_signed, row_number, status,
-                            signature_present, registration_no, qcab_serial_no
-                        ) VALUES (
-                            @filename, @center_code, @subcenter_code,
-                            @subject_code, @invigilator_signed, @row_number,
-                            @status, @signature_present, @registration_no,
-                            @qcab_serial_no
-                        );
-                    END
-                """)
-                conn.commit()
-
-            if not self.check_table_exists(conn, "error_log"):
-                messagebox.showerror(
-                    "Error",
-                    "Table 'error_log' does not exist. "
-                    "Run sql/NominalRolls.sql in SSMS first.")
-                conn.close()
-                return
-
-            if hasattr(self, "export_btn"):
-                self.export_btn.config(state="disabled")
-            self.progress["value"] = 0
-            self.progress["maximum"] = len(files)
-
+        def worker():
+            conn = None
             processed_count = 0
             saved_count = 0
             skipped_count = 0
             error_count = 0
-            self._init_status_grid()
+            try:
+                conn = self.get_sql_connection()
+                cursor = conn.cursor()
 
-            for idx, fname in enumerate(files, 1):
-                img_path = self.normalize_image_path(fname)
-                display_name = os.path.basename(img_path)
-                self.file_combo.current(idx - 1)
-                self.set_sheet_status(display_name, extracted="pending", saved_db="pending")
-                self.status_lbl.config(
-                    text=f"Processing {idx}/{len(files)} - {display_name}",
-                    foreground="#ffeb3b")
-                self.root.update_idletasks()
+                if not self.check_table_exists(conn, table_name):
+                    raise RuntimeError(
+                        f"Table '{table_name}' does not exist. Run sql/NominalRolls.sql in SSMS first.")
 
-                try:
-                    self.process_selected_sheet(force_reprocess=True)
-                    if img_path not in self.attendance_csv_records:
-                        error_count += 1
-                        self.set_sheet_status(
-                            display_name, extracted="error", saved_db="error")
-                        self.log_error_to_mssql(
-                            cursor, img_path, sheet_type_label,
-                            "Processing completed but no records were produced.")
-                        continue
+                if not self.check_table_exists(conn, "error_log"):
+                    raise RuntimeError(
+                        "Table 'error_log' does not exist. Run sql/NominalRolls.sql in SSMS first.")
 
-                    processed_count += 1
-                    data = self.attendance_csv_records[img_path]
-                    extracted_status = self._extracted_status_from_attendance_data(data)
+                if not is_type1 and not self.check_column_exists(
+                        conn, "attendance_sheet_data2", "qcab_serial_no"):
+                    cursor.execute(
+                        "ALTER TABLE dbo.attendance_sheet_data2 "
+                        "ADD qcab_serial_no NVARCHAR(50) NULL")
+                    conn.commit()
 
-                    if self.sheet_exists_in_db(cursor, table_name, img_path):
-                        skipped_count += 1
-                        self.set_sheet_status(
-                            display_name,
-                            extracted=extracted_status,
-                            saved_db="imported")
-                        continue
+                for idx, fname in enumerate(files, 1):
+                    img_path = self.normalize_image_path(fname)
+                    display_name = os.path.basename(img_path)
+                    self._run_on_ui(
+                        self._update_nominal_bulk_progress,
+                        idx, total, display_name, "pending", "pending")
 
-                    self.insert_attendance_rows_to_mssql(
-                        cursor, img_path, data, is_type1)
-                    saved_count += 1
-                    self.set_sheet_status(
-                        display_name,
-                        extracted=extracted_status,
-                        saved_db="imported")
-
-                except Exception as e:
-                    error_count += 1
-                    self.set_sheet_status(
-                        display_name, extracted="error", saved_db="error")
-                    print(f"Error processing {display_name}: {e}")
                     try:
-                        self.log_error_to_mssql(
-                            cursor, img_path, sheet_type_label, str(e))
-                    except Exception as log_err:
-                        print(f"Failed to write error_log for {display_name}: {log_err}")
+                        data = self._process_attendance_data_for_worker(img_path, is_type1)
+                        self.attendance_csv_records[img_path] = data
+                        if not data.get("records"):
+                            raise RuntimeError("Processing completed but no records were produced.")
 
-                self.progress["value"] = idx
-                self.root.update_idletasks()
+                        processed_count += 1
+                        extracted_status = self._extracted_status_from_attendance_data(data)
 
-            conn.commit()
-            conn.close()
+                        if self.sheet_exists_in_db(cursor, table_name, img_path):
+                            skipped_count += 1
+                        else:
+                            self.insert_attendance_rows_to_mssql(
+                                cursor, img_path, data, is_type1)
+                            saved_count += 1
 
-            audit.log("nominal_roll", "bulk_database_import", details={
-                "total": len(files), "processed": processed_count,
-                "saved": saved_count, "skipped": skipped_count, "errors": error_count})
+                        self._run_on_ui(
+                            self._update_nominal_bulk_progress,
+                            idx, total, display_name, extracted_status, "imported")
 
-            self._refresh_status_summary()
-            if processed_count > 0 and hasattr(self, "export_btn"):
-                self.export_btn.config(state="normal")
+                    except Exception as e:
+                        error_count += 1
+                        print(f"Error processing {display_name}: {e}")
+                        try:
+                            self.log_error_to_mssql(
+                                cursor, img_path, sheet_type_label, str(e))
+                        except Exception as log_err:
+                            print(f"Failed to write error_log for {display_name}: {log_err}")
+                        self._run_on_ui(
+                            self._update_nominal_bulk_progress,
+                            idx, total, display_name, "error", "error")
 
-            self.status_lbl.config(
-                text=(
-                    f"Processed {processed_count}/{len(files)} | "
-                    f"Saved {saved_count} | Skipped {skipped_count} | Errors {error_count}"
-                ),
-                foreground="#00e676")
-            messagebox.showinfo(
-                "Success",
-                f"Processed: {processed_count}/{len(files)}\n"
-                f"Saved to DB: {saved_count}\n"
-                f"Skipped (already in DB): {skipped_count}\n"
-                f"Errors logged: {error_count}\n\n"
-                "Use Export to Excel to save a CSV copy.")
+                conn.commit()
+                audit.log("nominal_roll", "bulk_database_import", details={
+                    "total": total, "processed": processed_count,
+                    "saved": saved_count, "skipped": skipped_count, "errors": error_count})
+                self._run_on_ui(
+                    self._finish_nominal_bulk_processing,
+                    processed_count, saved_count, skipped_count, error_count, None)
 
-        except Exception as e:
-            audit.log("nominal_roll", "bulk_database_import", outcome="failed",
-                      details={"error": str(e)})
-            messagebox.showerror("Database Error", str(e))
+            except Exception as e:
+                audit.log("nominal_roll", "bulk_database_import", outcome="failed",
+                          details={"error": str(e)})
+                self._run_on_ui(
+                    self._finish_nominal_bulk_processing,
+                    processed_count, saved_count, skipped_count, error_count, e)
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+
+        threading.Thread(target=worker, name="nominal-roll-bulk-worker", daemon=True).start()
+
+    def _update_nominal_bulk_progress(self, index, total, filename, extracted, saved_db):
+        self.set_sheet_status(filename, extracted=extracted, saved_db=saved_db)
+        self.status_lbl.config(
+            text=f"Processing {index}/{total} - {filename}",
+            foreground="#ffeb3b")
+        self.progress["value"] = index
+
+    def _finish_nominal_bulk_processing(
+            self, processed_count, saved_count, skipped_count, error_count, error):
+        self._bulk_processing = False
+        self._close_processing_dialog()
+        self._refresh_status_summary()
+        self._set_bulk_controls_state("normal")
+
+        if processed_count <= 0 and hasattr(self, "export_btn"):
+            self.export_btn.config(state="disabled")
+
+        if error:
+            self.status_lbl.config(text=f"Database Error: {error}", foreground="#ff1744")
+            messagebox.showerror("Database Error", str(error))
+            return
+
+        self.status_lbl.config(
+            text=(
+                f"Processed {processed_count}/{self.progress['maximum']} | "
+                f"Saved {saved_count} | Skipped {skipped_count} | Errors {error_count}"
+            ),
+            foreground="#00e676")
+        messagebox.showinfo(
+            "Success",
+            f"Processed: {processed_count}/{self.progress['maximum']}\n"
+            f"Saved to DB: {saved_count}\n"
+            f"Skipped (already in DB): {skipped_count}\n"
+            f"Errors logged: {error_count}\n\n"
+            "Use Export to Excel to save a CSV copy.")
 
     def load_attendance_csv(self):
         self.attendance_csv_records = {}
