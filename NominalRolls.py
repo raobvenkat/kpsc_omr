@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageTk
 import easyocr
+import audit
 
 # Add current directory to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -735,8 +736,12 @@ class AttendanceViewerDemo:
                 self.attendance_csv_records.get(fname))
             self.set_sheet_status(display_name, extracted=extracted_status)
             self.status_lbl.config(text="Processing Completed Successfully", foreground="#00e676")
+            audit.log("nominal_roll", "sheet_processed",
+                      details={"file": display_name, "records": len(records)})
             
         except Exception as e:
+            audit.log("nominal_roll", "sheet_processed", outcome="failed",
+                      details={"file": display_name, "error": str(e)})
             self.set_sheet_status(display_name, extracted="error")
             self.status_lbl.config(text=f"Error: {str(e)}", foreground="#ff1744")
             messagebox.showerror("Error", f"An error occurred: {str(e)}")
@@ -951,7 +956,7 @@ class AttendanceViewerDemo:
         choice = self.type_combo.get()
         is_type1 = "Sheet 1" in choice
         table_name = "attendance_sheet_data_1" if is_type1 else "attendance_sheet_data2"
-        sheet_type_label = "Attendance Sheet 1 (OMR)" if is_type1 else "Attendance Sheet 2 (QCAB)"
+        sheet_type_label = "Nominal Roll 1 (OMR)" if is_type1 else "Nominal Roll 2 (QCAB)"
 
         try:
             conn = self.get_sql_connection()
@@ -1152,6 +1157,10 @@ class AttendanceViewerDemo:
             conn.commit()
             conn.close()
 
+            audit.log("nominal_roll", "bulk_database_import", details={
+                "total": len(files), "processed": processed_count,
+                "saved": saved_count, "skipped": skipped_count, "errors": error_count})
+
             self._refresh_status_summary()
             if processed_count > 0 and hasattr(self, "export_btn"):
                 self.export_btn.config(state="normal")
@@ -1171,6 +1180,8 @@ class AttendanceViewerDemo:
                 "Use Export to Excel to save a CSV copy.")
 
         except Exception as e:
+            audit.log("nominal_roll", "bulk_database_import", outcome="failed",
+                      details={"error": str(e)})
             messagebox.showerror("Database Error", str(e))
 
     def load_attendance_csv(self):
@@ -1274,11 +1285,14 @@ class AttendanceViewerDemo:
 
         try:
             self.write_attendance_csv(save_path)
+            audit.log("nominal_roll", "results_exported", details={
+                "file": os.path.basename(save_path), "sheets": len(self.attendance_csv_records)})
             self.status_lbl.config(
                 text=f"Exported to: {os.path.basename(save_path)}",
                 foreground="#00e676")
             messagebox.showinfo("Success", f"Results exported to:\n{save_path}")
         except Exception as e:
+            audit.log("nominal_roll", "results_exported", outcome="failed", details={"error": str(e)})
             messagebox.showerror("Error", f"Failed to export results: {e}")
 
     def on_header_changed(self):

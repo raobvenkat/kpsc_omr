@@ -22,6 +22,7 @@ from pyzbar.pyzbar import decode
 import onnxruntime as ort
 import easyocr
 import torch
+import audit
 
 #import pytesseract
 #pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -1570,9 +1571,12 @@ class VisualOMRViewerDemo:
                 max_size=(int(sw*0.16), int(sh*0.10)))
             
             self.status_lbl.config(text="Sheet loaded successfully", foreground="#00e676")
+            audit.log("counter_foil", "sheet_processed", details={"file": filename})
             self.last_loaded_filename = filename
             self.last_loaded_folder = self.omr_dir
         except Exception as e:
+            audit.log("counter_foil", "sheet_processed", outcome="failed",
+                      details={"file": filename, "error": str(e)})
             self.status_lbl.config(text="Error processing sheet", foreground="#ff3d00")
             self.set_sheet_status(filename, extracted="error")
             import traceback
@@ -1660,11 +1664,14 @@ class VisualOMRViewerDemo:
 
         try:
             self.write_omr_csv(save_path)
+            audit.log("counter_foil", "results_exported",
+                      details={"file": os.path.basename(save_path), "records": len(self.omr_csv_records)})
             self.status_lbl.config(
                 text=f"Exported to: {os.path.basename(save_path)}",
                 foreground="#00e676")
             messagebox.showinfo("Success", f"Results exported to:\n{save_path}")
         except Exception as e:
+            audit.log("counter_foil", "results_exported", outcome="failed", details={"error": str(e)})
             messagebox.showerror("Error", f"Failed to export results: {e}")
 
     def save_corrections(self, filename_to_save=None, show_msg=True):
@@ -1708,6 +1715,8 @@ class VisualOMRViewerDemo:
                 self.current_omr_res.get("isblack", "")
                 if self.current_omr_res else "")
         }
+        if show_msg:
+            audit.log("counter_foil", "corrections_saved", details={"file": filename_to_save})
 
         self.status_lbl.config(
             text="Corrections saved in memory",
@@ -2122,6 +2131,9 @@ class VisualOMRViewerDemo:
             conn.commit()
             conn.close()
 
+            audit.log("counter_foil", "bulk_database_import",
+                      details={"total": total, "processed": processed_count})
+
             self._refresh_status_summary()
             if hasattr(self, "export_btn") and processed_count > 0:
                 self.export_btn.config(state="normal")
@@ -2132,6 +2144,8 @@ class VisualOMRViewerDemo:
                 "All sheets processed and saved to database!")
     
         except Exception as e:
+            audit.log("counter_foil", "bulk_database_import", outcome="failed",
+                      details={"error": str(e)})
             messagebox.showerror("Database Error", str(e))
 
     

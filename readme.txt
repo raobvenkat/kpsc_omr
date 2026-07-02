@@ -3,9 +3,12 @@ Launch with:
 python main.py
 First launch: SQL Server setup dialog (server, database, username, password)
 Test Connection validates before save
+After database setup: create the first administrator account
+Normal launch: login with an active admin/user account stored in SQL Server
 Hub GUI with two centered module cards:
 Counter Foil Sheets -> opens CounterFoilScanning.py
 Nominal Roll Sheets -> opens NominalRolls.py
+Admins can open User Master to create, update, and delete users
 Database Settings to update connection details later
 Responsive layout scales fonts, spacing, and card size from screen and window size
 Main window hides while a module is open; returns when you close the module
@@ -19,6 +22,11 @@ SHA-256 integrity hash in the file to detect tampering
 If the file is missing or invalid, setup is requested again
 Updated modules
 CounterFoilScanning.py, NominalRolls.py, CounterFoilSubBSNoEdit.py, and DescripancyReports.py use the shared connection from db_credentials instead of hardcoded SQL credentials.
+
+Authentication:
+auth.py creates dbo.app_users if needed.
+Passwords are stored in SQL Server as PBKDF2-HMAC-SHA256 hashes with random per-user salts.
+At least one active administrator is required.
 
 Production deployment
 Install dependencies:

@@ -1,14 +1,23 @@
-opencv-python==4.12.0.88
-numpy==2.2.6
-Pillow==11.3.0
-easyocr==1.7.2
-torch==2.7.1
-torchvision==0.22.1
-onnxruntime==1.22.1
-pyzbar==0.1.9
-openpyxl==3.1.5
-pyodbc==5.2.0
-pyinstaller==6.15.0
-pywin32>=311
+# Supported interpreters: CPython 3.13 and 3.14, 64-bit Windows.
+# System prerequisites: standard Python installer with Tcl/Tk enabled, and
+# Microsoft ODBC Driver 18 for SQL Server (64-bit).
+# Install with: python -m pip install --upgrade pip
+#               python -m pip install -r requirements.txt
 
-#pip install -r requirements.txt
+# Image processing and OCR
+numpy==2.5.0
+opencv-python-headless==4.13.0.92
+Pillow==12.2.0
+easyocr==1.7.2
+torch==2.12.1
+torchvision==0.27.1
+onnxruntime==1.27.0
+pyzbar==0.1.9
+
+# Database and Excel export
+pyodbc==5.3.0
+openpyxl==3.1.5
+
+# Windows runtime and executable packaging
+pywin32==312; sys_platform == "win32"
+pyinstaller==6.21.0
