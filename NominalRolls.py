@@ -142,7 +142,7 @@ class AttendanceViewerDemo:
         lbl_type = ttk.Label(top_frame, text="Sheet Type:", font=("Segoe UI", 11, "bold"), background="#2b2b36")
         lbl_type.pack(side="left", padx=(20, 5))
         
-        self.type_combo = ttk.Combobox(top_frame, values=["Attendance Sheet 1 (OMR)", "Attendance Sheet 2 (QCAB)"], state="readonly", width=25, font=("Segoe UI", 10))
+        self.type_combo = ttk.Combobox(top_frame, values=["Nominal Roll 1 (OMR)", "Nominal Roll 2 (QCAB)"], state="readonly", width=25, font=("Segoe UI", 10))
         self.type_combo.current(0)
         self.type_combo.pack(side="left", padx=10)
         self.type_combo.bind("<<ComboboxSelected>>", lambda e: self.on_sheet_type_changed())
