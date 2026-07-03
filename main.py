@@ -715,12 +715,12 @@ class MainApplication:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title(f"{APP_TITLE} v{APP_VERSION}")
-        self.root.configure(bg="#0f1218")
+        self.root.configure(bg="#0d1117")
 
         sw = root.winfo_screenwidth()
         sh = root.winfo_screenheight()
         win_w = min(1440, max(900, int(sw * 0.78)))
-        win_h = min(900, max(600, int(sh * 0.78)))
+        win_h = min(860, max(600, int(sh * 0.78)))
         self.root.geometry(
             f"{win_w}x{win_h}+{(sw - win_w) // 2}+{(sh - win_h) // 2}"
         )
@@ -737,247 +737,372 @@ class MainApplication:
     def _build_ui(self) -> None:
         fs = self.scaler.fs
         px = self.scaler.px
+        BG     = "#0d1117"
+        HDR_BG = "#0d1117"
+        BORDER = "#1e2733"
+        CARD   = "#161b22"
 
-        self.header = tk.Frame(self.root, bg="#101018", padx=px(32), pady=px(22))
+        # ── style ttk.Combobox for dark theme ─────────────────────
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure("Dark.TCombobox",
+            fieldbackground="#1e2430",
+            background="#1e2430",
+            foreground="#e6edf3",
+            arrowcolor="#8b93a7",
+            selectbackground="#1e2430",
+            selectforeground="#e6edf3",
+            bordercolor=BORDER,
+            lightcolor=BORDER,
+            darkcolor=BORDER,
+            insertcolor="#e6edf3",
+        )
+        style.map("Dark.TCombobox",
+            fieldbackground=[("readonly", "#1e2430"), ("focus", "#1e2430")],
+            foreground=[("readonly", "#e6edf3")],
+            selectbackground=[("readonly", "#1e2430")],
+        )
+        self.root.option_add("*TCombobox*Listbox.background", "#1e2430")
+        self.root.option_add("*TCombobox*Listbox.foreground", "#e6edf3")
+        self.root.option_add("*TCombobox*Listbox.selectBackground", "#2979ff")
+        self.root.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
+        self.root.option_add("*TCombobox*Listbox.font", ("Segoe UI", fs(10)))
+
+        # ── HEADER ────────────────────────────────────────────────
+        self.header = tk.Frame(self.root, bg=HDR_BG, padx=px(28), pady=px(20))
         self.header.pack(fill="x")
+        tk.Frame(self.root, bg=BORDER, height=1).pack(fill="x")
 
-        self.title_block = tk.Frame(self.header, bg="#101018")
-        self.title_block.pack(side="left")
+        self.title_block = tk.Frame(self.header, bg=HDR_BG)
+        # packed by _layout_cards
+
+        self._title_lbl = tk.Label(
+            self.title_block, text="KPSC OMR OPERATIONS",
+            bg=HDR_BG, fg="#e6edf3",
+            font=("Segoe UI", fs(20), "bold")
+        )
+        self._title_lbl.pack(anchor="w")
+
+        self._subtitle_lbl = tk.Label(
+            self.title_block,
+            text="Counter Foil & Nominal Roll Processing Workspace",
+            bg=HDR_BG, fg="#8b93a7",
+            font=("Segoe UI", fs(10))
+        )
+        self._subtitle_lbl.pack(anchor="w", pady=(px(2), 0))
+
+        self.actions = tk.Frame(self.header, bg=HDR_BG)
+        # packed by _layout_cards
+
+        def _hdr_btn(text, command, bg="#21262d", fg="#c9d1d9", abg="#30363d"):
+            return tk.Button(
+                self.actions, text=text, command=command,
+                bg=bg, fg=fg,
+                activebackground=abg, activeforeground=fg,
+                relief="flat", font=("Segoe UI", fs(9), "bold"),
+                padx=px(12), pady=px(5), cursor="hand2",
+                bd=0, highlightthickness=0
+            )
+
+        self.database_btn    = _hdr_btn("Database",     self._open_database_settings)
+        self.user_master_btn = _hdr_btn("Users",        self._open_user_master)
+        self.audit_export_btn = _hdr_btn("Audit Export", self._export_audit_logs)
+        self.logout_btn      = _hdr_btn("Logout",       self._logout)
+        self.exit_btn        = _hdr_btn("Exit",         self.root.destroy,
+                                        bg="#3a2028", fg="#ffb4ab", abg="#4a2830")
+
+        for btn in (self.database_btn, self.user_master_btn,
+                    self.logout_btn, self.exit_btn):
+            btn.pack(side="left", padx=(0, px(6)))
+        self.user_master_btn.config(state="disabled")
+
+        # ── CENTRE (full expand area) ─────────────────────────────
+        self.center = tk.Frame(self.root, bg=BG)
+        self.center.pack(fill="both", expand=True)
+
+        # ── LAUNCH PANEL (centred card) ───────────────────────────
+        self.launch_panel = tk.Frame(
+            self.center,
+            bg=CARD,
+            highlightthickness=1,
+            highlightbackground="#30363d",
+        )
+        # placed via _layout_cards
+
+        # Panel header bar
+        panel_hdr = tk.Frame(self.launch_panel, bg="#1c2230")
+        panel_hdr.pack(fill="x")
+        tk.Frame(self.launch_panel, bg="#2979ff", height=2).pack(fill="x")
 
         tk.Label(
-            self.title_block,
-            text="KPSC OMR OPERATIONS",
-            bg="#101018",
-            fg="#ffffff",
-            font=("Segoe UI", fs(22), "bold"),
-        ).pack(anchor="w")
+            panel_hdr, text="  Quick Launch",
+            bg="#1c2230", fg="#e6edf3",
+            font=("Segoe UI", fs(12), "bold"),
+            pady=px(12)
+        ).pack(side="left")
 
-        tk.Label(
-            self.title_block,
-            text="Counter foil and nominal roll processing workspace",
-            bg="#101018",
-            fg="#8b93a7",
-            font=("Segoe UI", fs(10)),
-        ).pack(anchor="w", pady=(px(4), 0))
+        # Panel body
+        panel_body = tk.Frame(self.launch_panel, bg=CARD, padx=px(28), pady=px(24))
+        panel_body.pack(fill="both", expand=True)
 
-        self.actions = tk.Frame(self.header, bg="#101018")
-        self.actions.pack(side="right")
+        # ── Helper: one labelled row with dropdown + Open button ──
+        def _combo_row(parent, label_text, var_name, values, on_select):
+            tk.Label(
+                parent, text=label_text,
+                bg=CARD, fg="#8b93a7",
+                font=("Segoe UI", fs(9), "bold"),
+                anchor="w"
+            ).pack(anchor="w", pady=(0, px(4)))
 
-        self.database_btn = tk.Button(
-            self.actions,
-            text="Database",
-            command=self._open_database_settings,
-            bg="#24242f",
-            fg="#ffffff",
-            activebackground="#323242",
-            activeforeground="#ffffff",
-            relief="flat",
-            font=("Segoe UI", fs(10), "bold"),
-            padx=px(14),
-            pady=px(6),
-            cursor="hand2",
-        )
-        self.database_btn.pack(side="left", padx=(0, px(8)))
+            row = tk.Frame(parent, bg=CARD)
+            row.pack(fill="x", pady=(0, px(18)))
 
-        self.user_master_btn = tk.Button(
-            self.actions,
-            text="Users",
-            command=self._open_user_master,
-            bg="#24242f",
-            fg="#ffffff",
-            activebackground="#323242",
-            activeforeground="#ffffff",
-            relief="flat",
-            font=("Segoe UI", fs(10), "bold"),
-            padx=px(14),
-            pady=px(6),
-            cursor="hand2",
-            state="disabled",
-        )
-        self.user_master_btn.pack(side="left", padx=(0, px(8)))
+            var = tk.StringVar()
+            setattr(self, var_name, var)
 
-        self.audit_export_btn = tk.Button(
-            self.actions,
-            text="Audit Export",
-            command=self._export_audit_logs,
-            bg="#24242f",
-            fg="#ffffff",
-            activebackground="#323242",
-            activeforeground="#ffffff",
-            relief="flat",
-            font=("Segoe UI", fs(10), "bold"),
-            padx=px(14),
-            pady=px(6),
-            cursor="hand2",
+            combo = ttk.Combobox(
+                row, textvariable=var,
+                values=values,
+                state="readonly",
+                style="Dark.TCombobox",
+                font=("Segoe UI", fs(11)),
+            )
+            combo.set("Select...")
+            combo.pack(side="left", fill="x", expand=True, ipady=px(5))
+
+            open_btn = tk.Button(
+                row, text="Open",
+                command=on_select,
+                bg="#2979ff", fg="#ffffff",
+                activebackground="#1565c0", activeforeground="#ffffff",
+                relief="flat", font=("Segoe UI", fs(10), "bold"),
+                padx=px(18), pady=px(6), cursor="hand2",
+                bd=0, highlightthickness=0
+            )
+            open_btn.pack(side="left", padx=(px(10), 0))
+
+            combo.bind("<<ComboboxSelected>>", lambda e: on_select())
+
+            return combo, open_btn
+
+        # Divider helper
+        def _divider():
+            tk.Frame(panel_body, bg=BORDER, height=1).pack(fill="x", pady=(0, px(18)))
+
+        # ── ROW 1: Data Extraction ────────────────────────────────
+        self._extract_combo, self._extract_open_btn = _combo_row(
+            panel_body,
+            "DATA EXTRACTION",
+            "extraction_type_var",
+            ["Counter Foil Scanning", "Nominal Rolls Scanning"],
+            self._on_extraction_type_selected,
         )
 
-        self.reports_btn = tk.Button(
-            self.actions,
-            text="Reports",
-            command=self._open_reports,
-            bg="#1565c0",
-            fg="#ffffff",
-            activebackground="#1976d2",
-            activeforeground="#ffffff",
-            relief="flat",
-            font=("Segoe UI", fs(10), "bold"),
-            padx=px(14),
-            pady=px(6),
-            cursor="hand2",
+        _divider()
+
+        # ── ROW 2: Discrepancies ─────────────────────────────────
+        self._disc_combo, self._disc_open_btn = _combo_row(
+            panel_body,
+            "DISCREPANCIES",
+            "discrepancy_var",
+            [
+                "Subject Code & Booklet Serial No Discrepancy",
+                "Barcode Discrepancy",
+                "Written RegNo Discrepancy",
+                "OMR RegNo Discrepancy",
+                "Whiter Used in the boubles",
+                "Boubles marked <35% Threshold marking",
+                "Candidate's Signature Discrepancy",
+                "Invigilator's Signature Discrepancy",
+                "Non standard OMR sheet used",
+                "Not signed by candidate in Nominal Rolll Discrepancy",
+                "Not signed by Invigilator in Nominal Rolll Discrepancy",
+            ],
+            self._on_discrepancy_selected,
         )
-        self.reports_btn.pack(side="left", padx=(0, px(8)))
 
-        self.logout_btn = tk.Button(
-            self.actions,
-            text="Logout",
-            command=self._logout,
-            bg="#24242f",
-            fg="#ffffff",
-            activebackground="#323242",
-            activeforeground="#ffffff",
-            relief="flat",
-            font=("Segoe UI", fs(10), "bold"),
-            padx=px(14),
-            pady=px(6),
-            cursor="hand2",
+        # ── ROW 3: Download Reports (Audit Export + Discrepancy Reports)
+        self._download_combo, self._download_open_btn = _combo_row(
+            panel_body,
+            "DOWNLOAD REPORTS",
+            "download_reports_var",
+            ["Audit Export", "Discrepancy Reports"],
+            self._on_download_report_selected,
         )
-        self.logout_btn.pack(side="left", padx=(0, px(8)))
 
-        self.exit_btn = tk.Button(
-            self.actions,
-            text="Exit",
-            command=self.root.destroy,
-            bg="#3a2028",
-            fg="#ffb4ab",
-            activebackground="#4a2830",
-            activeforeground="#ffb4ab",
-            relief="flat",
-            font=("Segoe UI", fs(10), "bold"),
-            padx=px(14),
-            pady=px(6),
-            cursor="hand2",
-        )
-        self.exit_btn.pack(side="left")
-
-        self.center = tk.Frame(self.root, bg="#101018")
-        self.center.pack(fill="both", expand=True, padx=px(40), pady=(0, px(24)))
-
-        self.cards = tk.Frame(self.center, bg="#101018")
-        self.cards.place(relx=0.5, rely=0.46, anchor="center")
-
-        self.omr_card = ModuleCard(
-            self.cards,
-            self.scaler,
-            title="Counter Foil Sheets",
-            subtitle=(
-                "Extract barcode, bubble responses, handwritten register numbers, "
-                "signatures, and QCA booklet data from Counter Foil sheets."
-            ),
-            accent="#00c853",
-            command=self.open_omr_module,
-        )
-        self.omr_card.grid(row=0, column=0, padx=px(16), pady=px(12), sticky="nsew")
-
-        self.attendance_card = ModuleCard(
-            self.cards,
-            self.scaler,
-            title="Nominal Roll  Sheets",
-            subtitle=(
-                "Process Nominal Roll Sheet Type 1 (OMR) and Type 2 (QCAB), "
-                "validate invigilator signatures, and export to SQL Server."
-            ),
-            accent="#2979ff",
-            command=self.open_attendance_module,
-        )
-        self.attendance_card.grid(row=0, column=1, padx=px(16), pady=px(12), sticky="nsew")
-
-        self.cards.grid_columnconfigure(0, weight=1)
-        self.cards.grid_columnconfigure(1, weight=1)
-
-        self.footer = tk.Frame(self.root, bg="#101018", padx=px(32), pady=px(16))
+        # ── FOOTER ────────────────────────────────────────────────
+        tk.Frame(self.root, bg=BORDER, height=1).pack(fill="x")
+        self.footer = tk.Frame(self.root, bg=BG, padx=px(28), pady=px(10))
         self.footer.pack(fill="x", side="bottom")
 
         self.db_status_lbl = tk.Label(
-            self.footer,
-            text="Database: checking…",
-            bg="#101018",
-            fg="#8b93a7",
-            font=("Segoe UI", fs(9)),
-            anchor="w",
+            self.footer, text="Database: checking...",
+            bg=BG, fg="#8b93a7",
+            font=("Segoe UI", fs(9)), anchor="w"
         )
         self.db_status_lbl.pack(side="left")
 
+        tk.Frame(self.footer, bg=BORDER, width=1).pack(
+            side="left", fill="y", padx=px(14))
+
         self.user_status_lbl = tk.Label(
-            self.footer,
-            text="User: not logged in",
-            bg="#101018",
-            fg="#8b93a7",
-            font=("Segoe UI", fs(9)),
-            anchor="w",
+            self.footer, text="Not logged in",
+            bg=BG, fg="#8b93a7",
+            font=("Segoe UI", fs(9)), anchor="w"
         )
-        self.user_status_lbl.pack(side="left", padx=(px(18), 0))
+        self.user_status_lbl.pack(side="left")
 
         tk.Label(
-            self.footer,
-            text=f"v{APP_VERSION}",
-            bg="#101018",
-            fg="#555d70",
-            font=("Segoe UI", fs(9)),
+            self.footer, text=f"v{APP_VERSION}",
+            bg=BG, fg="#484f58",
+            font=("Segoe UI", fs(9))
         ).pack(side="right")
 
         self.root.bind("<Configure>", self._layout_cards, add="+")
         self.root.after_idle(self._layout_cards)
+
+    def _open_disc_report(self, report_id: int) -> None:
+        """Open the DiscrepancyReports window pre-selected on the given report."""
+        try:
+            ok, error = self._validate_database_connection()
+            if not ok:
+                raise RuntimeError(error)
+        except Exception as exc:
+            messagebox.showerror(
+                "Database Not Configured",
+                f"Configure a working database connection first.\n\n{exc}",
+            )
+            return
+        if self.current_user is None:
+            if not self._show_login():
+                return
+
+        win = tk.Toplevel(self.root)
+        import DiscrepancyReports as _dr_mod
+        _dr_mod.LOGGED_USER_ID = self.current_user.user_id if self.current_user else 1
+        audit.log("application", "module_open",
+                  details={"module": "DiscrepancyReports", "report_id": report_id})
+        app = _dr_mod.DiscrepancyReports(win)
+        # Pre-select the specific report after the window is ready
+        win.after(250, lambda: app._select_report(report_id))
+
+        def _on_close():
+            audit.log("application", "module_close",
+                      details={"module": "DiscrepancyReports"})
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _on_close)
 
     def _layout_cards(self, event=None) -> None:
         if event is not None and event.widget is not self.root:
             return
 
         px = self.scaler.px
-        width = max(1, self.root.winfo_width())
+        fs = self.scaler.fs
+        width  = max(1, self.root.winfo_width())
         height = max(1, self.root.winfo_height())
-        compact = width < 1120
-        narrow = width < 880
+        HDR_BG = "#0d1117"
 
+        # ── Header responsive stacking ────────────────────────────
+        compact = width < 1100
         self.title_block.pack_forget()
         self.actions.pack_forget()
+
         if compact:
+            self.header.configure(padx=px(20), pady=px(14))
             self.title_block.pack(fill="x", anchor="w")
-            self.actions.pack(fill="x", anchor="w", pady=(px(12), 0))
+            self.actions.pack(fill="x", anchor="w", pady=(px(8), 0))
+            self._title_lbl.configure(font=("Segoe UI", fs(15), "bold"))
+            self._subtitle_lbl.configure(font=("Segoe UI", fs(9)))
         else:
+            self.header.configure(padx=px(28), pady=px(20))
             self.title_block.pack(side="left", anchor="w")
             self.actions.pack(side="right", anchor="e")
+            self._title_lbl.configure(font=("Segoe UI", fs(20), "bold"))
+            self._subtitle_lbl.configure(font=("Segoe UI", fs(10)))
 
-        self.cards.place_configure(
-            relx=0.5, rely=0.48, anchor="center",
-            relwidth=0.94 if narrow else 0.88,
-            relheight=0.86 if narrow else 0.68,
+        # ── Launch panel size & position (responsive) ────────────
+        # Compute a target size but place the panel using relative sizing
+        panel_w = max(360, min(800, width - px(48)))
+        panel_h = max(320, min(int(height * 0.9), int(height * 0.75)))
+
+        relwidth = max(0.5, min(0.98, panel_w / max(1, width)))
+        relheight = max(0.35, min(0.95, panel_h / max(1, height)))
+
+        # Place the launch panel responsively so it adapts to window size
+        self.launch_panel.place(
+            in_=self.center,
+            relx=0.5, rely=0.5, anchor="center",
+            relwidth=relwidth, relheight=relheight,
         )
-        self.omr_card.grid_forget()
-        self.attendance_card.grid_forget()
-        self.cards.grid_columnconfigure(0, weight=1)
-        self.cards.grid_columnconfigure(1, weight=0 if narrow else 1)
-        self.cards.grid_rowconfigure(0, weight=1)
-        self.cards.grid_rowconfigure(1, weight=1 if narrow else 0)
 
-        if narrow:
-            self.omr_card.grid(row=0, column=0, padx=0, pady=(0, px(7)), sticky="nsew")
-            self.attendance_card.grid(row=1, column=0, padx=0, pady=(px(7), 0), sticky="nsew")
-            card_w = max(300, int(width * 0.80))
-            card_h = max(150, int(height * 0.25))
-        else:
-            self.omr_card.grid(row=0, column=0, padx=(0, px(10)), pady=0, sticky="nsew")
-            self.attendance_card.grid(row=0, column=1, padx=(px(10), 0), pady=0, sticky="nsew")
-            card_w = max(300, int(width * 0.36))
-            card_h = max(220, int(height * 0.42))
+        # ── Footer wraplength ─────────────────────────────────────
+        self.db_status_lbl.configure(wraplength=max(200, int(width * 0.35)))
+        self.user_status_lbl.configure(wraplength=max(160, int(width * 0.25)))
 
-        for card in (self.omr_card, self.attendance_card):
-            card.configure(width=card_w, height=card_h)
-            card.grid_propagate(False)
-            card.resize(card_w, compact)
+    def _on_extraction_type_selected(self, _event=None) -> None:
+        selection = self.extraction_type_var.get()
+        if not selection or selection == "Select...":
+            return
+        # Reset to placeholder after opening
+        self.root.after(100, lambda: self.extraction_type_var.set("Select..."))
+        if "Counter Foil" in selection:
+            self.open_omr_module()
+        elif "Nominal" in selection:
+            self.open_attendance_module()
 
-        footer_wrap = max(260, int(width * 0.42))
-        self.db_status_lbl.configure(wraplength=footer_wrap)
-        self.user_status_lbl.configure(wraplength=footer_wrap)
+    def _on_discrepancy_selected(self, _event=None) -> None:
+        selection = self.discrepancy_var.get()
+        if not selection or selection == "Select...":
+            return
+
+        self.root.after(100, lambda: self.discrepancy_var.set("Select..."))
+
+        if selection == "Subject Code & Booklet Serial No Discrepancy":
+            self.open_subject_booklet_discrepancy()
+            return
+
+        self.open_pending_discrepancy(selection)
+
+    def _on_download_report_selected(self, _event=None) -> None:
+        selection = self.download_reports_var.get()
+        if not selection or selection == "Select...":
+            return
+
+        # Reset to placeholder
+        self.root.after(100, lambda: self.download_reports_var.set("Select..."))
+
+        if selection == "Audit Export":
+            self._export_audit_logs()
+            return
+
+        if selection == "Discrepancy Reports":
+            # Open the DiscrepancyReports module
+            try:
+                ok, error = self._validate_database_connection()
+                if not ok:
+                    raise RuntimeError(error)
+            except Exception as exc:
+                messagebox.showerror(
+                    "Database Not Configured",
+                    f"Configure a working database connection first.\n\n{exc}",
+                )
+                return
+
+            if self.current_user is None:
+                if not self._show_login():
+                    return
+
+            win = tk.Toplevel(self.root)
+            import DiscrepancyReports as _dr_mod
+            _dr_mod.LOGGED_USER_ID = self.current_user.user_id if self.current_user else 1
+            audit.log("application", "module_open", details={"module": "DiscrepancyReports"})
+            app = _dr_mod.DiscrepancyReports(win)
+            def _on_close():
+                audit.log("application", "module_close", details={"module": "DiscrepancyReports"})
+                win.destroy()
+            win.protocol("WM_DELETE_WINDOW", _on_close)
+            return
 
     def _refresh_db_status(self) -> None:
         try:
@@ -1134,10 +1259,8 @@ class MainApplication:
             fg="#00e676",
         )
         self.user_master_btn.config(state="normal" if user.is_admin else "disabled")
-        if user.is_admin:
-            self.audit_export_btn.pack(side="left", padx=(0, self.scaler.px(8)), before=self.root.nametowidget(self.audit_export_btn.master.winfo_children()[-2]))
-        else:
-            self.audit_export_btn.pack_forget()
+        # Audit export is now available through the Download Reports combo
+        # (do not show header button separately)
 
     def _logout(self) -> None:
         audit.log("authentication", "logout")
@@ -1307,6 +1430,24 @@ class MainApplication:
         self._open_module(
             AttendanceViewerDemo,
             "Attendance Sheet Extraction",
+        )
+
+    def open_subject_booklet_discrepancy(self) -> None:
+        from CounterFoilSubBSNoEdit import SubjectBookletDiscrepancy
+
+        self._open_module(
+            SubjectBookletDiscrepancy,
+            "Subject Code & QCA Booklet Serial No Discrepancy",
+        )
+
+    def open_pending_discrepancy(self, title: str) -> None:
+        # Add future discrepancy module imports here, for example:
+        # from MyDiscrepancyFile import MyDiscrepancyClass
+        # self._open_module(MyDiscrepancyClass, title)
+        messagebox.showinfo(
+            "Discrepancy Module Pending",
+            f"{title} is listed and ready to be wired. Add the Python module import and handler in this method when you are ready.",
+            parent=self.root,
         )
 
 

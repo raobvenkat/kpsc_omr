@@ -20,7 +20,7 @@ BOOKLET_BOX=(930,690,1425,890)
 class SubjectBookletDiscrepancy:
     def __init__(self, root):
         self.root=root
-        self.root.title('Subject Code & QCA Booklet Serial Number Descripancy')
+        self.root.title('Subject Code & QCA Booklet Serial Number Discrepancy')
         self.root.geometry('1600x900')
         self.current_image=None
         self.create_screen()
@@ -29,7 +29,7 @@ class SubjectBookletDiscrepancy:
         return pyodbc.connect(CONNECTION_STRING)
 
     def create_screen(self):
-        tk.Label(self.root,text='Subject Code & QCA Booklet Serial Number Descripancy',bg='#1976D2',fg='white',font=('Arial',18,'bold')).pack(fill='x')
+        tk.Label(self.root,text='Subject Code & QCA Booklet Serial Number Discrepancy',bg='#1976D2',fg='white',font=('Arial',18,'bold')).pack(fill='x')
         main=tk.Frame(self.root)
         main.pack(fill='both',expand=True)
 
