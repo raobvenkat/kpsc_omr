@@ -80,7 +80,19 @@ class AttendanceViewerDemo:
         self.current_invigilator_signed = 0
         self.attendance_csv_records = {} # filename -> list of records
         self.current_dir = None
-        
+
+        # Raw crop stores for zoomable previews
+        self._crop_sig = None
+        self._crop_inv = None
+        self._crop_reg = None
+        self._crop_omr = None
+
+        # Per-panel zoom levels (1.0 = fit-to-widget)
+        self._zoom_sig = 1.0
+        self._zoom_inv = 1.0
+        self._zoom_reg = 1.0
+        self._zoom_omr = 1.0
+
         self.build_ui()
 
     def build_ui(self):
@@ -247,11 +259,13 @@ class AttendanceViewerDemo:
         self.sig_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(0, 3))
         self.sig_preview_lbl = tk.Label(self.sig_preview_wrapper, bg="#2b2b36")
         self.sig_preview_lbl.pack(fill="both", expand=True)
+        self.sig_preview_lbl.bind("<Control-MouseWheel>", lambda e: self._on_preview_zoom(e, "_crop_sig", "_zoom_sig", "tk_sig", self.sig_preview_lbl))
 
         self.inv_sig_preview_wrapper = tk.LabelFrame(self.signature_preview_frame, text="Invigilator Signature Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
         self.inv_sig_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(3, 0))
         self.inv_sig_preview_lbl = tk.Label(self.inv_sig_preview_wrapper, bg="#2b2b36")
         self.inv_sig_preview_lbl.pack(fill="both", expand=True)
+        self.inv_sig_preview_lbl.bind("<Control-MouseWheel>", lambda e: self._on_preview_zoom(e, "_crop_inv", "_zoom_inv", "tk_inv_sig", self.inv_sig_preview_lbl))
         
         self.reg_omr_preview_frame = tk.Frame(details_frame, bg="#2b2b36")
         self.reg_omr_preview_frame.pack(side="left", fill="both", expand=True, padx=10, pady=5)
@@ -260,11 +274,13 @@ class AttendanceViewerDemo:
         self.reg_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(0, 3))
         self.reg_preview_lbl = tk.Label(self.reg_preview_wrapper, bg="#2b2b36")
         self.reg_preview_lbl.pack(fill="both", expand=True)
+        self.reg_preview_lbl.bind("<Control-MouseWheel>", lambda e: self._on_preview_zoom(e, "_crop_reg", "_zoom_reg", "tk_reg", self.reg_preview_lbl))
 
         self.omr_preview_wrapper = tk.LabelFrame(self.reg_omr_preview_frame, text="OMR No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
         self.omr_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(3, 0))
         self.omr_preview_lbl = tk.Label(self.omr_preview_wrapper, bg="#2b2b36")
         self.omr_preview_lbl.pack(fill="both", expand=True)
+        self.omr_preview_lbl.bind("<Control-MouseWheel>", lambda e: self._on_preview_zoom(e, "_crop_omr", "_zoom_omr", "tk_omr", self.omr_preview_lbl))
 
         # Correction Form Frame
         correction_frame = tk.LabelFrame(right_frame, text="Candidate Row Form", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, height=90)
@@ -500,6 +516,8 @@ class AttendanceViewerDemo:
         self.inv_sig_preview_lbl.config(image="")
         self.reg_preview_lbl.config(image="")
         self.omr_preview_lbl.config(image="")
+        self._crop_sig = self._crop_inv = self._crop_reg = self._crop_omr = None
+        self._zoom_sig = self._zoom_inv = self._zoom_reg = self._zoom_omr = 1.0
         for item in self.tree.get_children():
             self.tree.delete(item)
         if hasattr(self, "export_btn"):
@@ -809,23 +827,55 @@ class AttendanceViewerDemo:
                 new_h = max(1, int(h * scale))
                 return cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
 
-            sig_resized = fit_preview(sig_crop, self.sig_preview_lbl)
-            inv_sig_resized = fit_preview(inv_sig_crop, self.inv_sig_preview_lbl)
-            reg_resized = fit_preview(reg_crop, self.reg_preview_lbl)
-            omr_resized = fit_preview(omr_crop, self.omr_preview_lbl)
-            
-            # Display Previews
-            self.tk_sig = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(sig_resized, cv2.COLOR_BGR2RGB)))
-            self.sig_preview_lbl.config(image=self.tk_sig)
+            # Store raw crops and reset zoom to fit-to-widget on new row selection
+            self._crop_sig = sig_crop
+            self._crop_inv = inv_sig_crop
+            self._crop_reg = reg_crop
+            self._crop_omr = omr_crop
+            self._zoom_sig = 1.0
+            self._zoom_inv = 1.0
+            self._zoom_reg = 1.0
+            self._zoom_omr = 1.0
 
-            self.tk_inv_sig = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(inv_sig_resized, cv2.COLOR_BGR2RGB)))
-            self.inv_sig_preview_lbl.config(image=self.tk_inv_sig)
-            
-            self.tk_reg = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(reg_resized, cv2.COLOR_BGR2RGB)))
-            self.reg_preview_lbl.config(image=self.tk_reg)
+            # Display Previews using shared renderer
+            self._render_preview(self._crop_sig,  self.sig_preview_lbl,     self._zoom_sig,  "tk_sig")
+            self._render_preview(self._crop_inv,  self.inv_sig_preview_lbl, self._zoom_inv,  "tk_inv_sig")
+            self._render_preview(self._crop_reg,  self.reg_preview_lbl,     self._zoom_reg,  "tk_reg")
+            self._render_preview(self._crop_omr,  self.omr_preview_lbl,     self._zoom_omr,  "tk_omr")
 
-            self.tk_omr = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(omr_resized, cv2.COLOR_BGR2RGB)))
-            self.omr_preview_lbl.config(image=self.tk_omr)
+    def _render_preview(self, crop, label, zoom, tk_attr):
+        """Render a crop image into a label at the given zoom level.
+        zoom=1.0 means fit-to-widget; values >1 zoom in, <1 zoom out.
+        """
+        if crop is None or crop.size == 0:
+            return
+        self.root.update_idletasks()
+        max_w = max(label.winfo_width() - 12, 60)
+        max_h = max(label.winfo_height() - 12, 30)
+        h, w = crop.shape[:2]
+        # Base scale: fit crop inside the widget
+        base_scale = min(max_w / w, max_h / h)
+        final_scale = base_scale * zoom
+        new_w = max(1, int(w * final_scale))
+        new_h = max(1, int(h * final_scale))
+        resized = cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+        photo = ImageTk.PhotoImage(image=Image.fromarray(cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)))
+        setattr(self, tk_attr, photo)   # keep a reference so GC doesn't collect it
+        label.config(image=photo)
+
+    def _on_preview_zoom(self, event, crop_attr, zoom_attr, tk_attr, label):
+        """Handle Ctrl+MouseWheel to zoom a preview panel in/out."""
+        crop = getattr(self, crop_attr, None)
+        if crop is None:
+            return
+        zoom = getattr(self, zoom_attr, 1.0)
+        # event.delta is +120 per scroll step up, -120 per step down on Windows
+        if event.delta > 0:
+            zoom = min(zoom * 1.15, 10.0)   # max 10× zoom
+        else:
+            zoom = max(zoom / 1.15, 0.1)    # min 0.1× zoom
+        setattr(self, zoom_attr, zoom)
+        self._render_preview(crop, label, zoom, tk_attr)
 
     def browse_folder(self):
         dir_path = filedialog.askdirectory()
