@@ -80,6 +80,8 @@ class AttendanceViewerDemo:
         self.current_invigilator_signed = 0
         self.attendance_csv_records = {} # filename -> list of records
         self.current_dir = None
+        self.current_zoom = 1.0  # Zoom level
+        self.annotated_full = None  # Full annotated image for zooming
         
         self.build_ui()
 
@@ -455,8 +457,19 @@ class AttendanceViewerDemo:
         self._refresh_status_summary()
 
     def on_annotated_image_mousewheel(self, event):
-        if event.state & 0x0001:
+        # Check if Ctrl key is pressed for zoom
+        if event.state & 0x0004:  # Ctrl key mask
+            zoom_factor = 1.1 if event.delta > 0 else 0.9
+            new_zoom = self.current_zoom * zoom_factor
+            # Constrain zoom between 0.5 and 3.0
+            new_zoom = max(0.5, min(3.0, new_zoom))
+            if new_zoom != self.current_zoom:
+                self.current_zoom = new_zoom
+                self._redraw_annotated_image()
+        # Shift key for horizontal scroll
+        elif event.state & 0x0001:
             self.image_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
+        # Regular vertical scroll
         else:
             self.image_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
@@ -471,6 +484,27 @@ class AttendanceViewerDemo:
         entry.delete(0, tk.END)
         entry.insert(0, value)
         entry.config(state="readonly")
+
+    def _redraw_annotated_image(self):
+        """Redraw the annotated image at the current zoom level."""
+        if self.annotated_full is None:
+            return
+        
+        h, w = self.annotated_full.shape[:2]
+        display_w = max(1, int(w * self.current_zoom))
+        display_h = max(1, int(h * self.current_zoom))
+        
+        annotated_view = cv2.resize(
+            self.annotated_full, (display_w, display_h),
+            interpolation=cv2.INTER_AREA)
+        
+        color_cvt = cv2.cvtColor(annotated_view, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(color_cvt)
+        self.tk_img = ImageTk.PhotoImage(image=pil_img)
+        self.image_canvas.delete("all")
+        self.image_canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
+        self.image_canvas.configure(
+            scrollregion=(0, 0, self.tk_img.width(), self.tk_img.height()))
 
     def normalize_image_path(self, path_value):
         if not path_value:
@@ -696,27 +730,10 @@ class AttendanceViewerDemo:
                 (inv_x0, max(25, inv_y0 - 10)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, inv_color, 2)
                 
-            # Display a reduced annotated image in the scrollable viewer.
-            self.root.update_idletasks()
-            canvas_w = max(self.image_canvas.winfo_width() - 24, 480)
-            canvas_h = max(self.image_canvas.winfo_height() - 24, 320)
-            display_scale = min(
-                0.55,
-                max(0.22, min((canvas_w * 1.05) / w, (canvas_h * 1.25) / h))
-            )
-            display_w = max(1, int(w * display_scale))
-            display_h = max(1, int(h * display_scale))
-            annotated_view = cv2.resize(
-                annotated, (display_w, display_h),
-                interpolation=cv2.INTER_AREA)
-
-            color_cvt = cv2.cvtColor(annotated_view, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(color_cvt)
-            self.tk_img = ImageTk.PhotoImage(image=pil_img)
-            self.image_canvas.delete("all")
-            self.image_canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
-            self.image_canvas.configure(
-                scrollregion=(0, 0, self.tk_img.width(), self.tk_img.height()))
+            # Store the full annotated image for zooming and set initial zoom
+            self.annotated_full = annotated.copy()
+            self.current_zoom = 1.2  # Start at 1.2x for better initial visibility
+            self._redraw_annotated_image()
             
             # Update Treeview
             for item in self.tree.get_children():
