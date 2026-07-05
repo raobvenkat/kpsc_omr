@@ -479,67 +479,48 @@ class DiscrepancyReports:
     # EXPORT EXCEL
     # ======================================================
 
-    def export_to_excel(
-            self,
-            columns,
-            data,
-            report_name):
+    def export_to_excel(self, columns, data, report_name):
 
         file_name = filedialog.asksaveasfilename(
             title="Save Excel Report",
             defaultextension=".xlsx",
             initialfile=f"{report_name}.xlsx",
-            filetypes=[
-                (
-                    "Excel Files",
-                    "*.xlsx"
-                )
-            ]
+            filetypes=[("Excel Files", "*.xlsx")]
         )
+
+        # Re-raise our window above the main screen after the file dialog closes
+        self.root.lift()
+        self.root.focus_force()
 
         if not file_name:
             return
 
         workbook = Workbook()
-
         worksheet = workbook.active
         worksheet.title = "Report"
 
-        # Headers
-        for col_no, column_name in enumerate(
-                columns,
-                start=1):
-
-            cell = worksheet.cell(
-                row=1,
-                column=col_no
-            )
-
+        for col_no, column_name in enumerate(columns, start=1):
+            cell = worksheet.cell(row=1, column=col_no)
             cell.value = column_name
             cell.font = Font(bold=True)
 
-        # Data
         row_no = 2
-
         for row in data:
-
-            for col_no, value in enumerate(
-                    row,
-                    start=1):
-
-                worksheet.cell(
-                    row=row_no,
-                    column=col_no
-                ).value = value
-
+            for col_no, value in enumerate(row, start=1):
+                worksheet.cell(row=row_no, column=col_no).value = value
             row_no += 1
 
         workbook.save(file_name)
 
+        self.root.lift()
+        self.root.focus_force()
         messagebox.showinfo(
             "Success",
-            "Excel file downloaded successfully."
+            "Excel file downloaded successfully.",
+            parent=self.root
         )
+        self.root.lift()
+        self.root.focus_force()
 
     # ======================================================
     # DOWNLOAD EXCEL
@@ -552,47 +533,33 @@ class DiscrepancyReports:
             selected = self.lst_reports.curselection()
 
             if not selected:
-
                 messagebox.showwarning(
                     "Warning",
-                    "Please select a report."
+                    "Please select a report.",
+                    parent=self.root
                 )
-
                 return
 
-            report_name = self.lst_reports.get(
-                selected[0]
-            )
+            report_name = self.lst_reports.get(selected[0])
 
-            procedure_name = self.report_data[
-                report_name
-            ]["ProcedureName"]
+            procedure_name = self.report_data[report_name]["ProcedureName"]
 
-            columns, data = self.execute_procedure(
-                procedure_name
-            )
+            columns, data = self.execute_procedure(procedure_name)
 
             if len(data) == 0:
-
                 messagebox.showinfo(
                     "Information",
-                    "No data found."
+                    "No data found.",
+                    parent=self.root
                 )
-
                 return
 
-            self.export_to_excel(
-                columns,
-                data,
-                report_name
-            )
+            self.export_to_excel(columns, data, report_name)
 
         except Exception as ex:
-
-            messagebox.showerror(
-                "Error",
-                str(ex)
-            )
+            self.root.lift()
+            self.root.focus_force()
+            messagebox.showerror("Error", str(ex), parent=self.root)
 
 
 # ==========================================================

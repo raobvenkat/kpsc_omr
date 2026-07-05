@@ -978,11 +978,14 @@ class MainApplication:
                 return
 
         win = tk.Toplevel(self.root)
+        win.transient(self.root)
         import DiscrepancyReports as _dr_mod
         _dr_mod.LOGGED_USER_ID = self.current_user.user_id if self.current_user else 1
         audit.log("application", "module_open",
                   details={"module": "DiscrepancyReports", "report_id": report_id})
         app = _dr_mod.DiscrepancyReports(win)
+        win.lift()
+        win.focus_force()
         # Pre-select the specific report after the window is ready
         win.after(250, lambda: app._select_report(report_id))
 
@@ -1094,10 +1097,13 @@ class MainApplication:
                     return
 
             win = tk.Toplevel(self.root)
+            win.transient(self.root)
             import DiscrepancyReports as _dr_mod
             _dr_mod.LOGGED_USER_ID = self.current_user.user_id if self.current_user else 1
             audit.log("application", "module_open", details={"module": "DiscrepancyReports"})
             app = _dr_mod.DiscrepancyReports(win)
+            win.lift()
+            win.focus_force()
             def _on_close():
                 audit.log("application", "module_close", details={"module": "DiscrepancyReports"})
                 win.destroy()
