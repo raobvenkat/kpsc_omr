@@ -2,13 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
 import pyodbc
-
-SERVER='3.109.160.126'
-DATABASE='KPSCOMRICRExtraction'
-USERNAME='KPSCDev'
-PASSWORD='kpscD5v'
-
-CONN_STR=(f"DRIVER={{{'ODBC Driver 17 for SQL Server'}}};SERVER={SERVER};DATABASE={DATABASE};UID={USERNAME};PWD={PASSWORD};TrustServerCertificate=yes;")
+import db_credentials
 
 class UserGroupMaster:
     def __init__(self, root):
