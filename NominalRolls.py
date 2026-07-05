@@ -93,6 +93,10 @@ class AttendanceViewerDemo:
         self._zoom_reg = 1.0
         self._zoom_omr = 1.0
 
+        # Annotated sheet viewer zoom
+        self._annotated_img = None
+        self._canvas_zoom = 1.0
+
         self.build_ui()
 
     def build_ui(self):
@@ -471,9 +475,15 @@ class AttendanceViewerDemo:
         self._refresh_status_summary()
 
     def on_annotated_image_mousewheel(self, event):
-        if event.state & 0x0001:
+        if event.state & 0x0004:  # Ctrl held — zoom
+            if event.delta > 0:
+                self._canvas_zoom = min(self._canvas_zoom * 1.15, 10.0)
+            else:
+                self._canvas_zoom = max(self._canvas_zoom / 1.15, 0.1)
+            self._render_canvas_image()
+        elif event.state & 0x0001:  # Shift held — pan horizontal
             self.image_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
-        else:
+        else:  # plain scroll — pan vertical
             self.image_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     def get_invigilator_signature_box(self, w, h, is_type1=None):
@@ -512,6 +522,8 @@ class AttendanceViewerDemo:
         self.file_combo.set("")
         self.image_canvas.delete("all")
         self.image_canvas.configure(scrollregion=(0, 0, 0, 0))
+        self._annotated_img = None
+        self._canvas_zoom = 1.0
         self.sig_preview_lbl.config(image="")
         self.inv_sig_preview_lbl.config(image="")
         self.reg_preview_lbl.config(image="")
@@ -713,27 +725,10 @@ class AttendanceViewerDemo:
                 (inv_x0, max(25, inv_y0 - 10)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, inv_color, 2)
                 
-            # Display a reduced annotated image in the scrollable viewer.
-            self.root.update_idletasks()
-            canvas_w = max(self.image_canvas.winfo_width() - 24, 480)
-            canvas_h = max(self.image_canvas.winfo_height() - 24, 320)
-            display_scale = min(
-                0.55,
-                max(0.22, min((canvas_w * 1.05) / w, (canvas_h * 1.25) / h))
-            )
-            display_w = max(1, int(w * display_scale))
-            display_h = max(1, int(h * display_scale))
-            annotated_view = cv2.resize(
-                annotated, (display_w, display_h),
-                interpolation=cv2.INTER_AREA)
-
-            color_cvt = cv2.cvtColor(annotated_view, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(color_cvt)
-            self.tk_img = ImageTk.PhotoImage(image=pil_img)
-            self.image_canvas.delete("all")
-            self.image_canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
-            self.image_canvas.configure(
-                scrollregion=(0, 0, self.tk_img.width(), self.tk_img.height()))
+            # Store full-res annotated image and reset zoom, then display
+            self._annotated_img = annotated
+            self._canvas_zoom = 1.0
+            self._render_canvas_image()
             
             # Update Treeview
             for item in self.tree.get_children():
@@ -842,6 +837,31 @@ class AttendanceViewerDemo:
             self._render_preview(self._crop_inv,  self.inv_sig_preview_lbl, self._zoom_inv,  "tk_inv_sig")
             self._render_preview(self._crop_reg,  self.reg_preview_lbl,     self._zoom_reg,  "tk_reg")
             self._render_preview(self._crop_omr,  self.omr_preview_lbl,     self._zoom_omr,  "tk_omr")
+
+    def _render_canvas_image(self):
+        """Re-render the annotated sheet on the canvas at the current zoom level."""
+        if self._annotated_img is None:
+            return
+        self.root.update_idletasks()
+        img = self._annotated_img
+        h, w = img.shape[:2]
+        canvas_w = max(self.image_canvas.winfo_width() - 24, 480)
+        canvas_h = max(self.image_canvas.winfo_height() - 24, 320)
+        # Base scale: fit the image inside the canvas (clamped to original display limits)
+        base_scale = min(
+            0.55,
+            max(0.22, min((canvas_w * 1.05) / w, (canvas_h * 1.25) / h))
+        )
+        final_scale = base_scale * self._canvas_zoom
+        display_w = max(1, int(w * final_scale))
+        display_h = max(1, int(h * final_scale))
+        annotated_view = cv2.resize(img, (display_w, display_h), interpolation=cv2.INTER_AREA)
+        pil_img = Image.fromarray(cv2.cvtColor(annotated_view, cv2.COLOR_BGR2RGB))
+        self.tk_img = ImageTk.PhotoImage(image=pil_img)
+        self.image_canvas.delete("all")
+        self.image_canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
+        self.image_canvas.configure(
+            scrollregion=(0, 0, self.tk_img.width(), self.tk_img.height()))
 
     def _render_preview(self, crop, label, zoom, tk_attr):
         """Render a crop image into a label at the given zoom level.
