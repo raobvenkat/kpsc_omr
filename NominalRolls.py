@@ -80,8 +80,6 @@ class AttendanceViewerDemo:
         self.current_invigilator_signed = 0
         self.attendance_csv_records = {} # filename -> list of records
         self.current_dir = None
-        self.current_zoom = 1.0  # Zoom level
-        self.annotated_full = None  # Full annotated image for zooming
         
         self.build_ui()
 
@@ -144,7 +142,7 @@ class AttendanceViewerDemo:
         lbl_type = ttk.Label(top_frame, text="Sheet Type:", font=("Segoe UI", 11, "bold"), background="#2b2b36")
         lbl_type.pack(side="left", padx=(20, 5))
         
-        self.type_combo = ttk.Combobox(top_frame, values=["Nominal Roll 1 (OMR)", "Nominal Roll 2 (QCAB)"], state="readonly", width=25, font=("Segoe UI", 10))
+        self.type_combo = ttk.Combobox(top_frame, values=["Attendance Sheet 1 (OMR)", "Attendance Sheet 2 (QCAB)"], state="readonly", width=25, font=("Segoe UI", 10))
         self.type_combo.current(0)
         self.type_combo.pack(side="left", padx=10)
         self.type_combo.bind("<<ComboboxSelected>>", lambda e: self.on_sheet_type_changed())
@@ -255,16 +253,13 @@ class AttendanceViewerDemo:
         self.inv_sig_preview_lbl = tk.Label(self.inv_sig_preview_wrapper, bg="#2b2b36")
         self.inv_sig_preview_lbl.pack(fill="both", expand=True)
         
-        self.number_preview_frame = tk.Frame(details_frame, bg="#2b2b36")
-        self.number_preview_frame.pack(side="left", fill="both", expand=True, padx=10, pady=5)
-
-        self.reg_preview_wrapper = tk.LabelFrame(self.number_preview_frame, text="Registration No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        self.reg_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(0, 3))
+        self.reg_preview_wrapper = tk.LabelFrame(details_frame, text="Registration No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
+        self.reg_preview_wrapper.pack(side="left", fill="both", expand=True, padx=5, pady=5)
         self.reg_preview_lbl = tk.Label(self.reg_preview_wrapper, bg="#2b2b36")
         self.reg_preview_lbl.pack(fill="both", expand=True)
 
-        self.omr_preview_wrapper = tk.LabelFrame(self.number_preview_frame, text="OMR No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        self.omr_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(3, 0))
+        self.omr_preview_wrapper = tk.LabelFrame(details_frame, text="OMR No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
+        self.omr_preview_wrapper.pack(side="left", fill="both", expand=True, padx=5, pady=5)
         self.omr_preview_lbl = tk.Label(self.omr_preview_wrapper, bg="#2b2b36")
         self.omr_preview_lbl.pack(fill="both", expand=True)
 
@@ -457,19 +452,8 @@ class AttendanceViewerDemo:
         self._refresh_status_summary()
 
     def on_annotated_image_mousewheel(self, event):
-        # Check if Ctrl key is pressed for zoom
-        if event.state & 0x0004:  # Ctrl key mask
-            zoom_factor = 1.1 if event.delta > 0 else 0.9
-            new_zoom = self.current_zoom * zoom_factor
-            # Constrain zoom between 0.5 and 3.0
-            new_zoom = max(0.5, min(3.0, new_zoom))
-            if new_zoom != self.current_zoom:
-                self.current_zoom = new_zoom
-                self._redraw_annotated_image()
-        # Shift key for horizontal scroll
-        elif event.state & 0x0001:
+        if event.state & 0x0001:
             self.image_canvas.xview_scroll(int(-1 * (event.delta / 120)), "units")
-        # Regular vertical scroll
         else:
             self.image_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
@@ -484,27 +468,6 @@ class AttendanceViewerDemo:
         entry.delete(0, tk.END)
         entry.insert(0, value)
         entry.config(state="readonly")
-
-    def _redraw_annotated_image(self):
-        """Redraw the annotated image at the current zoom level."""
-        if self.annotated_full is None:
-            return
-        
-        h, w = self.annotated_full.shape[:2]
-        display_w = max(1, int(w * self.current_zoom))
-        display_h = max(1, int(h * self.current_zoom))
-        
-        annotated_view = cv2.resize(
-            self.annotated_full, (display_w, display_h),
-            interpolation=cv2.INTER_AREA)
-        
-        color_cvt = cv2.cvtColor(annotated_view, cv2.COLOR_BGR2RGB)
-        pil_img = Image.fromarray(color_cvt)
-        self.tk_img = ImageTk.PhotoImage(image=pil_img)
-        self.image_canvas.delete("all")
-        self.image_canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
-        self.image_canvas.configure(
-            scrollregion=(0, 0, self.tk_img.width(), self.tk_img.height()))
 
     def normalize_image_path(self, path_value):
         if not path_value:
@@ -585,9 +548,8 @@ class AttendanceViewerDemo:
                 y_centers = [580, 815, 1049, 1283, 1521, 1754]
                 px_offset, ax_offset = 423, 473
                 sig_x0, sig_x1 = 330, 810
-                #reg_x0, reg_x1 = 830, 1030  
-                reg_x0, reg_x1 = 760, 950             
-                omr_x0, omr_x1 = 1090, 21450
+                reg_x0, reg_x1 = 830, 1030
+                omr_x0, omr_x1 = 1090, 1250
             else:
                 expected_border = 133
                 from core.nominal_roll_type2 import detect_left_border as detect_left_border2
@@ -730,10 +692,27 @@ class AttendanceViewerDemo:
                 (inv_x0, max(25, inv_y0 - 10)),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, inv_color, 2)
                 
-            # Store the full annotated image for zooming and set initial zoom
-            self.annotated_full = annotated.copy()
-            self.current_zoom = 1.2  # Start at 1.2x for better initial visibility
-            self._redraw_annotated_image()
+            # Display a reduced annotated image in the scrollable viewer.
+            self.root.update_idletasks()
+            canvas_w = max(self.image_canvas.winfo_width() - 24, 480)
+            canvas_h = max(self.image_canvas.winfo_height() - 24, 320)
+            display_scale = min(
+                0.55,
+                max(0.22, min((canvas_w * 1.05) / w, (canvas_h * 1.25) / h))
+            )
+            display_w = max(1, int(w * display_scale))
+            display_h = max(1, int(h * display_scale))
+            annotated_view = cv2.resize(
+                annotated, (display_w, display_h),
+                interpolation=cv2.INTER_AREA)
+
+            color_cvt = cv2.cvtColor(annotated_view, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(color_cvt)
+            self.tk_img = ImageTk.PhotoImage(image=pil_img)
+            self.image_canvas.delete("all")
+            self.image_canvas.create_image(0, 0, anchor="nw", image=self.tk_img)
+            self.image_canvas.configure(
+                scrollregion=(0, 0, self.tk_img.width(), self.tk_img.height()))
             
             # Update Treeview
             for item in self.tree.get_children():
@@ -802,8 +781,7 @@ class AttendanceViewerDemo:
             # Crop cells
             if self.is_type1:
                 sig_crop = self.current_img[yc+25:yc+105, 330+shift : 810+shift]
-                #reg_crop = self.current_img[yc-25:yc+25, 830+shift : 1030+shift]
-                reg_crop = self.current_img[yc-40:yc+25, 630+shift : 1030+shift]
+                reg_crop = self.current_img[yc-25:yc+25, 830+shift : 1030+shift]
                 omr_crop = self.current_img[yc-25:yc+25, 1090+shift : 1250+shift]
             else:
                 sig_crop = self.current_img[yc+40:yc+130, 380+shift : 850+shift]
