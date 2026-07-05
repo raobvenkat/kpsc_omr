@@ -253,13 +253,16 @@ class AttendanceViewerDemo:
         self.inv_sig_preview_lbl = tk.Label(self.inv_sig_preview_wrapper, bg="#2b2b36")
         self.inv_sig_preview_lbl.pack(fill="both", expand=True)
         
-        self.reg_preview_wrapper = tk.LabelFrame(details_frame, text="Registration No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        self.reg_preview_wrapper.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        self.reg_omr_preview_frame = tk.Frame(details_frame, bg="#2b2b36")
+        self.reg_omr_preview_frame.pack(side="left", fill="both", expand=True, padx=10, pady=5)
+
+        self.reg_preview_wrapper = tk.LabelFrame(self.reg_omr_preview_frame, text="Registration No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
+        self.reg_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(0, 3))
         self.reg_preview_lbl = tk.Label(self.reg_preview_wrapper, bg="#2b2b36")
         self.reg_preview_lbl.pack(fill="both", expand=True)
 
-        self.omr_preview_wrapper = tk.LabelFrame(details_frame, text="OMR No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        self.omr_preview_wrapper.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        self.omr_preview_wrapper = tk.LabelFrame(self.reg_omr_preview_frame, text="OMR No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
+        self.omr_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(3, 0))
         self.omr_preview_lbl = tk.Label(self.omr_preview_wrapper, bg="#2b2b36")
         self.omr_preview_lbl.pack(fill="both", expand=True)
 
