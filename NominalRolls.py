@@ -39,84 +39,117 @@ class AttendanceViewerDemo:
         self.root.minsize(
             max(1024, int(sw * 0.65)),
             max(620, int(sh * 0.62)))
-        self.root.configure(bg="#1c1c22") # Sleek premium dark background
-        
-        # Configure Styles
+        self.root.configure(bg="#1c1c22")
+
+        # ── Scale factor ──────────────────────────────────────────────────────
+        # Baseline is 1080p (1920×1080). All sizes are defined at that
+        # resolution and multiplied by S to suit the actual screen.
+        S = min(sw / 1920, sh / 1080)          # uniform scale, ≤1 on HD, >1 on 4K
+        self._S = S                              # save for later use
+
+        def fs(n):
+            """Return an integer font size scaled from the 1080p baseline."""
+            return max(7, int(n * S))
+
+        def px(n):
+            """Return a pixel measurement scaled from the 1080p baseline."""
+            return max(1, int(n * S))
+
+        # ── ttk Styles ────────────────────────────────────────────────────────
         self.style = ttk.Style()
         self.style.theme_use("clam")
-        
-        # Dark theme configuration
-        self.style.configure(".", background="#1c1c22", foreground="#ffffff", fieldbackground="#2b2b36")
-        self.style.configure("TLabel", background="#1c1c22", foreground="#ffffff", font=("Segoe UI", 10))
-        self.style.configure("Header.TLabel", font=("Segoe UI", 16, "bold"), foreground="#00e676", background="#1c1c22")
-        self.style.configure("TButton", font=("Segoe UI", 10, "bold"), background="#00c853", foreground="#ffffff", borderwidth=0, focuscolor="none")
+
+        self.style.configure(".", background="#1c1c22", foreground="#ffffff",
+                              fieldbackground="#2b2b36")
+        self.style.configure("TLabel", background="#1c1c22", foreground="#ffffff",
+                              font=("Segoe UI", fs(10)))
+        self.style.configure("Header.TLabel",
+                              font=("Segoe UI", fs(16), "bold"),
+                              foreground="#00e676", background="#1c1c22")
+        self.style.configure("TButton",
+                              font=("Segoe UI", fs(10), "bold"),
+                              background="#00c853", foreground="#ffffff",
+                              borderwidth=0, focuscolor="none")
         self.style.map("TButton", background=[("active", "#00e676")])
-        self.style.configure("TCombobox", background="#2b2b36", foreground="#ffffff", fieldbackground="#2b2b36")
-        self.style.map("TCombobox", fieldbackground=[("readonly", "#2b2b36")], foreground=[("readonly", "#ffffff")])
-        
-        # Style Entry fields for clear contrast
-        self.style.configure("TEntry", fieldbackground="#2b2b36", foreground="#ffffff", insertcolor="#ffffff")
-        self.style.map("TEntry", fieldbackground=[("readonly", "#1c1c22")], foreground=[("readonly", "#888888")])
-        self.style.configure("Thin.Horizontal.TProgressbar", troughcolor="#2b2b36", background="#00c853", thickness=8)
-        
-        # Treeview Styles
-        self.style.configure("Treeview", background="#2b2b36", foreground="#ffffff", fieldbackground="#2b2b36", rowheight=25)
-        self.style.map("Treeview", background=[("selected", "#00c853")], foreground=[("selected", "#ffffff")])
-        self.style.configure("Treeview.Heading", background="#1c1c22", foreground="#00e676", font=("Segoe UI", 10, "bold"))
-        
-        # Configure Dropdown Listbox popup style globally
+        self.style.configure("TCombobox", background="#2b2b36",
+                              foreground="#ffffff", fieldbackground="#2b2b36",
+                              font=("Segoe UI", fs(10)))
+        self.style.map("TCombobox",
+                       fieldbackground=[("readonly", "#2b2b36")],
+                       foreground=[("readonly", "#ffffff")])
+        self.style.configure("TEntry", fieldbackground="#2b2b36",
+                              foreground="#ffffff", insertcolor="#ffffff",
+                              font=("Segoe UI", fs(9)))
+        self.style.map("TEntry",
+                       fieldbackground=[("readonly", "#1c1c22")],
+                       foreground=[("readonly", "#888888")])
+        self.style.configure("Thin.Horizontal.TProgressbar",
+                              troughcolor="#2b2b36", background="#00c853",
+                              thickness=px(8))
+        self.style.configure("Treeview", background="#2b2b36",
+                              foreground="#ffffff", fieldbackground="#2b2b36",
+                              rowheight=px(26),
+                              font=("Segoe UI", fs(9)))
+        self.style.map("Treeview",
+                       background=[("selected", "#00c853")],
+                       foreground=[("selected", "#ffffff")])
+        self.style.configure("Treeview.Heading", background="#1c1c22",
+                              foreground="#00e676",
+                              font=("Segoe UI", fs(10), "bold"))
+
         self.root.option_add("*TCombobox*Listbox.background", "#2b2b36")
         self.root.option_add("*TCombobox*Listbox.foreground", "#ffffff")
         self.root.option_add("*TCombobox*Listbox.selectBackground", "#00c853")
         self.root.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
-        self.root.option_add("*TCombobox*Listbox.font", ("Segoe UI", 10))
+        self.root.option_add("*TCombobox*Listbox.font", ("Segoe UI", fs(10)))
 
-        
+        # ── Paths ─────────────────────────────────────────────────────────────
         self.sheet1_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Attendance Sheet1")
         self.sheet2_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Attendance Sheet2")
-        
+
+        # ── Runtime state ─────────────────────────────────────────────────────
         self.current_records = []
         self.current_img = None
         self.current_invigilator_signed = 0
-        self.attendance_csv_records = {} # filename -> list of records
+        self.attendance_csv_records = {}
         self.current_dir = None
 
-        # Raw crop stores for zoomable previews
         self._crop_sig = None
         self._crop_inv = None
         self._crop_reg = None
         self._crop_omr = None
 
-        # Per-panel zoom levels (1.0 = fit-to-widget)
         self._zoom_sig = 1.0
         self._zoom_inv = 1.0
         self._zoom_reg = 1.0
         self._zoom_omr = 1.0
 
-        # Annotated sheet viewer zoom
         self._annotated_img = None
         self._canvas_zoom = 1.0
 
         self.build_ui()
+        # Re-distribute treeview column widths whenever the window is resized
+        self.root.bind("<Configure>", self._on_window_resize)
 
     def build_ui(self):
-        # Header row
-        header = tk.Frame(self.root, bg="#2b2b36", height=46, bd=0)
-        header.pack(fill="x", side="top", padx=0, pady=0)
-        header.pack_propagate(False)
+        S  = self._S
+        fs = lambda n: max(7, int(n * S))
+        px = lambda n: max(1, int(n * S))
 
+        # ── Header bar ────────────────────────────────────────────────────────
+        header = tk.Frame(self.root, bg="#2b2b36", bd=0)
+        header.pack(fill="x", side="top")
         tk.Label(header,
                  text="Nominal Roll Extraction Engine",
                  bg="#2b2b36", fg="#00e676",
-                 font=("Segoe UI", 18, "bold"),
-                 anchor="center").pack(fill="both", expand=True)
+                 font=("Segoe UI", fs(18), "bold"),
+                 anchor="center",
+                 pady=px(10)).pack(fill="x")
+        tk.Frame(self.root, bg="#00c853", height=px(2)).pack(fill="x", side="top")
 
-        tk.Frame(self.root, bg="#00c853", height=2).pack(fill="x", side="top")
-
-        # 1. Top Panel (Control Panel)
-        top_frame = tk.Frame(self.root, bg="#2b2b36", height=70, bd=0)
-        top_frame.pack(fill="x", side="top", padx=0, pady=0)
-        top_frame.pack_propagate(False)
+        # ── Control bar ───────────────────────────────────────────────────────
+        top_frame = tk.Frame(self.root, bg="#2b2b36", bd=0)
+        top_frame.pack(fill="x", side="top", pady=(px(2), 0))
         
         # 1.5 Header Info Panel
         self.header_frame = tk.Frame(self.root, bg="#2b2b36", height=45, bd=0)
@@ -155,201 +188,279 @@ class AttendanceViewerDemo:
             foreground="#00e676")
         self.invigilator_sig_lbl.pack(side="left", padx=(18, 5))
         
-        lbl_type = ttk.Label(top_frame, text="Sheet Type:", font=("Segoe UI", 11, "bold"), background="#2b2b36")
-        lbl_type.pack(side="left", padx=(20, 5))
-        
-        self.type_combo = ttk.Combobox(top_frame, values=["Attendance Sheet 1 (OMR)", "Attendance Sheet 2 (QCAB)"], state="readonly", width=25, font=("Segoe UI", 10))
+        lbl_type = ttk.Label(top_frame, text="Sheet Type:",
+                             font=("Segoe UI", fs(11), "bold"),
+                             background="#2b2b36")
+        lbl_type.pack(side="left", padx=(px(20), px(5)), pady=px(8))
+
+        self.type_combo = ttk.Combobox(
+            top_frame,
+            values=["Attendance Sheet 1 (OMR)", "Attendance Sheet 2 (QCAB)"],
+            state="readonly", width=25, font=("Segoe UI", fs(10)))
         self.type_combo.current(0)
-        self.type_combo.pack(side="left", padx=10)
+        self.type_combo.pack(side="left", padx=px(10), pady=px(8))
         self.type_combo.bind("<<ComboboxSelected>>", lambda e: self.on_sheet_type_changed())
-        
-        # lbl_file = ttk.Label(top_frame, text="Select Image:", font=("Segoe UI", 11, "bold"), background="#2b2b36")
-        # lbl_file.pack(side="left", padx=(20, 5))
-        
-        browse_btn = ttk.Button(top_frame, text="Select Folder...", command=self.browse_folder, style="TButton")
-        browse_btn.pack(side="left", padx=5)
-        
-        self.prev_btn = ttk.Button(top_frame, text="<- Prev", command=lambda: self.navigate_sheet(-1), style="TButton", width=8, state="disabled")
-        self.prev_btn.pack(side="left", padx=2)
-        
-        self.file_combo = ttk.Combobox(top_frame, state="readonly", width=60, font=("Segoe UI", 10))
-        self.file_combo.pack(side="left", padx=5)
-        self.file_combo.bind("<<ComboboxSelected>>", lambda e: self.process_selected_sheet())
-        
-        self.next_btn = ttk.Button(top_frame, text="Next ->", command=lambda: self.navigate_sheet(1), style="TButton", width=8, state="disabled")
-        self.next_btn.pack(side="left", padx=2)
-        
-        # Run Processing button removed as Next/Prev and selection handles processing automatically
-        
-        self.export_btn = ttk.Button(top_frame, text="Export to Excel", command=self.export_results_to_excel, style="TButton", width=16, state="disabled")
-        self.export_btn.pack(side="right", padx=(5, 10))
 
-        self.process_all_btn = ttk.Button(
-            top_frame, text="Process All",
-            command=self.process_all_sheets_to_mssql,
-            style="TButton", width=12)
-        self.process_all_btn.pack(side="right", padx=5)
-        
-        # 2. Main content split pane
+        browse_btn = ttk.Button(top_frame, text="Select Folder...",
+                                command=self.browse_folder)
+        browse_btn.pack(side="left", padx=px(5), pady=px(8))
+
+        self.prev_btn = ttk.Button(top_frame, text="← Prev",
+                                   command=lambda: self.navigate_sheet(-1),
+                                   width=8, state="disabled")
+        self.prev_btn.pack(side="left", padx=px(2), pady=px(8))
+
+        self.file_combo = ttk.Combobox(top_frame, state="readonly",
+                                       font=("Segoe UI", fs(10)))
+        self.file_combo.pack(side="left", padx=px(5), pady=px(8),
+                             fill="x", expand=True)
+        self.file_combo.bind("<<ComboboxSelected>>",
+                             lambda e: self.process_selected_sheet())
+
+        self.next_btn = ttk.Button(top_frame, text="Next →",
+                                   command=lambda: self.navigate_sheet(1),
+                                   width=8, state="disabled")
+        self.next_btn.pack(side="left", padx=px(2), pady=px(8))
+
+        self.export_btn = ttk.Button(top_frame, text="Export to Excel",
+                                     command=self.export_results_to_excel,
+                                     width=16, state="disabled")
+        self.export_btn.pack(side="right", padx=(px(5), px(10)), pady=px(8))
+
+        self.process_all_btn = ttk.Button(top_frame, text="Process All",
+                                          command=self.process_all_sheets_to_mssql,
+                                          width=12)
+        self.process_all_btn.pack(side="right", padx=px(5), pady=px(8))
+
+        # ── Header info bar ───────────────────────────────────────────────────
+        self.header_frame = tk.Frame(self.root, bg="#2b2b36", bd=0)
+        self.header_frame.pack(fill="x", side="top", pady=(0, px(2)))
+
+        for lbl_text, entry_attr in [
+                ("Center Code:",     "center_entry"),
+                ("Sub Center Code:", "subcenter_entry"),
+                ("Subject Code:",    "subject_entry")]:
+            ttk.Label(self.header_frame, text=lbl_text,
+                      font=("Segoe UI", fs(10), "bold"),
+                      background="#2b2b36").pack(
+                          side="left", padx=(px(20), px(5)), pady=px(6))
+            e = ttk.Entry(self.header_frame, width=10,
+                          font=("Segoe UI", fs(10)))
+            e.pack(side="left", padx=px(5), pady=px(6))
+            e.bind("<KeyRelease>", lambda ev: self.on_header_changed())
+            setattr(self, entry_attr, e)
+
+        self.status_lbl = ttk.Label(
+            self.header_frame, text="Ready",
+            font=("Segoe UI", fs(10), "italic"),
+            background="#2b2b36", foreground="#ffeb3b")
+        self.status_lbl.pack(side="left", padx=(px(24), px(8)), pady=px(6))
+
+        self.progress = ttk.Progressbar(
+            self.header_frame, orient="horizontal",
+            length=px(180), mode="determinate",
+            style="Thin.Horizontal.TProgressbar")
+        self.progress.pack(side="left", padx=px(4), pady=px(6))
+
+        self.invigilator_sig_lbl = ttk.Label(
+            self.header_frame, text="Invigilator Signed: -",
+            font=("Segoe UI", fs(10), "bold"),
+            background="#2b2b36", foreground="#00e676")
+        self.invigilator_sig_lbl.pack(side="left", padx=(px(18), px(5)), pady=px(6))
+
+        # ── Main content area ─────────────────────────────────────────────────
         content_frame = tk.Frame(self.root, bg="#1c1c22")
-        content_frame.pack(fill="both", expand=True, padx=15, pady=15)
+        content_frame.pack(fill="both", expand=True,
+                           padx=px(15), pady=px(10))
 
-        # Left column: annotated viewer (top) + process status grid (bottom)
-        left_column = tk.Frame(content_frame, bg="#1c1c22", width=650)
-        left_column.pack(fill="both", side="left", padx=(0, 10))
-        left_column.pack_propagate(False)
+        # Left column: annotated viewer + status grid
+        left_column = tk.Frame(content_frame, bg="#1c1c22")
+        left_column.pack(fill="both", side="left", padx=(0, px(10)))
+        self._left_column = left_column
 
         self.left_frame = tk.LabelFrame(
             left_column, text="Annotated Sheet Viewer",
             bg="#2b2b36", fg="#00e676",
-            font=("Segoe UI", 10, "bold"), bd=1)
-        self.left_frame.pack(fill="both", expand=True, padx=0, pady=(0, 8))
+            font=("Segoe UI", fs(10), "bold"), bd=1)
+        self.left_frame.pack(fill="both", expand=True, padx=0, pady=(0, px(8)))
 
-        self.image_canvas = tk.Canvas(self.left_frame, bg="#2b2b36", highlightthickness=0)
-        self.image_scroll_y = ttk.Scrollbar(self.left_frame, orient="vertical", command=self.image_canvas.yview)
-        self.image_scroll_x = ttk.Scrollbar(self.left_frame, orient="horizontal", command=self.image_canvas.xview)
+        self.image_canvas = tk.Canvas(self.left_frame, bg="#2b2b36",
+                                      highlightthickness=0)
+        self.image_scroll_y = ttk.Scrollbar(self.left_frame, orient="vertical",
+                                            command=self.image_canvas.yview)
+        self.image_scroll_x = ttk.Scrollbar(self.left_frame, orient="horizontal",
+                                            command=self.image_canvas.xview)
         self.image_canvas.configure(
             yscrollcommand=self.image_scroll_y.set,
             xscrollcommand=self.image_scroll_x.set)
         self.image_scroll_y.pack(side="right", fill="y")
         self.image_scroll_x.pack(side="bottom", fill="x")
-        self.image_canvas.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        self.image_canvas.pack(side="left", fill="both", expand=True,
+                               padx=px(5), pady=px(5))
         self.image_canvas.bind("<MouseWheel>", self.on_annotated_image_mousewheel)
 
         self.build_status_panel(left_column)
         self._status_iids = {}
         self._status_state = {}
-        
+
         # Right Panel: Table and crops
         right_frame = tk.Frame(content_frame, bg="#1c1c22")
-        right_frame.pack(fill="both", side="right", expand=True, padx=(10, 0))
+        right_frame.pack(fill="both", side="right", expand=True, padx=(px(10), 0))
+        self._right_frame = right_frame
         
-        # Table Frame
-        table_frame = tk.LabelFrame(right_frame, text="Extracted Nominal Roll Table", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1)
-        table_frame.pack(fill="x", expand=False, pady=(0, 10))
-        
-        # Scrollbars for Treeview
+        # ── Nominal roll table ────────────────────────────────────────────────
+        table_frame = tk.LabelFrame(right_frame, text="Extracted Nominal Roll Table",
+                                    bg="#2b2b36", fg="#00e676",
+                                    font=("Segoe UI", fs(10), "bold"), bd=1)
+        table_frame.pack(fill="x", expand=False, pady=(0, px(8)))
+
         tree_scroll_y = ttk.Scrollbar(table_frame, orient="vertical")
         tree_scroll_y.pack(side="right", fill="y")
-        
-        self.tree = ttk.Treeview(table_frame, columns=("row", "status", "sig", "inv_sig", "reg_no", "omr_no", "qpvc"), show="headings", yscrollcommand=tree_scroll_y.set, height=6)
-        tree_scroll_y.config(command=self.tree.yview)
-        
-        self.tree.heading("row", text="Row")
-        self.tree.heading("status", text="Status")
-        self.tree.heading("sig", text="Std. Sign")
-        self.tree.heading("inv_sig", text="Inv. Sign")
-        self.tree.heading("reg_no", text="Reg No")
-        self.tree.heading("omr_no", text="OMR No")
-        self.tree.heading("qpvc", text="QPVC")
-        
-        self.tree.column("row", width=60, anchor="center")
-        self.tree.column("status", width=120, anchor="center")
-        self.tree.column("sig", width=120, anchor="center")
-        self.tree.column("inv_sig", width=120, anchor="center")
-        self.tree.column("reg_no", width=120, anchor="center")
-        self.tree.column("omr_no", width=120, anchor="center")
-        self.tree.column("qpvc", width=60, anchor="center")
-        self.tree.pack(fill="x", expand=False, padx=5, pady=5)
-        self.tree.bind("<<TreeviewSelect>>", self.on_row_selected)
-        
-        # Details / Crop Frame at Bottom Right
-        details_frame = tk.LabelFrame(right_frame, text="Selected Row Visual Verification Snippets", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, height=210)
-        details_frame.pack(fill="x", expand=False)
-        details_frame.pack_propagate(False)
-        
-        self.signature_preview_frame = tk.Frame(details_frame, bg="#2b2b36")
-        self.signature_preview_frame.pack(side="left", fill="both", expand=True, padx=10, pady=5)
 
-        self.sig_preview_wrapper = tk.LabelFrame(self.signature_preview_frame, text="Candidate Signature Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        self.sig_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(0, 3))
+        self.tree = ttk.Treeview(
+            table_frame,
+            columns=("row", "status", "sig", "inv_sig", "reg_no", "omr_no", "qpvc"),
+            show="headings", yscrollcommand=tree_scroll_y.set, height=6)
+        tree_scroll_y.config(command=self.tree.yview)
+
+        self.tree.heading("row",     text="Row")
+        self.tree.heading("status",  text="Status")
+        self.tree.heading("sig",     text="Std. Sign")
+        self.tree.heading("inv_sig", text="Inv. Sign")
+        self.tree.heading("reg_no",  text="Reg No")
+        self.tree.heading("omr_no",  text="OMR No")
+        self.tree.heading("qpvc",    text="QPVC")
+
+        self.tree.column("row",     width=px(55),  minwidth=px(40),  anchor="center")
+        self.tree.column("status",  width=px(100), minwidth=px(70),  anchor="center")
+        self.tree.column("sig",     width=px(90),  minwidth=px(60),  anchor="center")
+        self.tree.column("inv_sig", width=px(90),  minwidth=px(60),  anchor="center")
+        self.tree.column("reg_no",  width=px(110), minwidth=px(80),  anchor="center")
+        self.tree.column("omr_no",  width=px(110), minwidth=px(80),  anchor="center")
+        self.tree.column("qpvc",    width=px(55),  minwidth=px(40),  anchor="center")
+        self.tree.pack(fill="x", expand=False, padx=px(5), pady=px(5))
+        self.tree.bind("<<TreeviewSelect>>", self.on_row_selected)
+
+        # ── Visual verification snippets ──────────────────────────────────────
+        details_frame = tk.LabelFrame(
+            right_frame, text="Selected Row Visual Verification Snippets",
+            bg="#2b2b36", fg="#00e676",
+            font=("Segoe UI", fs(10), "bold"), bd=1)
+        details_frame.pack(fill="both", expand=True, pady=(0, px(4)))
+
+        self.signature_preview_frame = tk.Frame(details_frame, bg="#2b2b36")
+        self.signature_preview_frame.pack(side="left", fill="both",
+                                          expand=True, padx=px(10), pady=px(5))
+
+        self.sig_preview_wrapper = tk.LabelFrame(
+            self.signature_preview_frame, text="Candidate Signature Crop",
+            bg="#2b2b36", fg="#ffffff", font=("Segoe UI", fs(8)))
+        self.sig_preview_wrapper.pack(side="top", fill="both",
+                                      expand=True, pady=(0, px(3)))
         self.sig_preview_lbl = tk.Label(self.sig_preview_wrapper, bg="#2b2b36")
         self.sig_preview_lbl.pack(fill="both", expand=True)
-        self.sig_preview_lbl.bind("<Control-MouseWheel>", lambda e: self._on_preview_zoom(e, "_crop_sig", "_zoom_sig", "tk_sig", self.sig_preview_lbl))
+        self.sig_preview_lbl.bind("<Control-MouseWheel>",
+            lambda e: self._on_preview_zoom(e, "_crop_sig", "_zoom_sig",
+                                            "tk_sig", self.sig_preview_lbl))
 
-        self.inv_sig_preview_wrapper = tk.LabelFrame(self.signature_preview_frame, text="Invigilator Signature Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        self.inv_sig_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(3, 0))
+        self.inv_sig_preview_wrapper = tk.LabelFrame(
+            self.signature_preview_frame, text="Invigilator Signature Crop",
+            bg="#2b2b36", fg="#ffffff", font=("Segoe UI", fs(8)))
+        self.inv_sig_preview_wrapper.pack(side="top", fill="both",
+                                          expand=True, pady=(px(3), 0))
         self.inv_sig_preview_lbl = tk.Label(self.inv_sig_preview_wrapper, bg="#2b2b36")
         self.inv_sig_preview_lbl.pack(fill="both", expand=True)
-        self.inv_sig_preview_lbl.bind("<Control-MouseWheel>", lambda e: self._on_preview_zoom(e, "_crop_inv", "_zoom_inv", "tk_inv_sig", self.inv_sig_preview_lbl))
-        
-        self.reg_omr_preview_frame = tk.Frame(details_frame, bg="#2b2b36")
-        self.reg_omr_preview_frame.pack(side="left", fill="both", expand=True, padx=10, pady=5)
+        self.inv_sig_preview_lbl.bind("<Control-MouseWheel>",
+            lambda e: self._on_preview_zoom(e, "_crop_inv", "_zoom_inv",
+                                            "tk_inv_sig", self.inv_sig_preview_lbl))
 
-        self.reg_preview_wrapper = tk.LabelFrame(self.reg_omr_preview_frame, text="Registration No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        self.reg_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(0, 3))
+        self.reg_omr_preview_frame = tk.Frame(details_frame, bg="#2b2b36")
+        self.reg_omr_preview_frame.pack(side="left", fill="both",
+                                        expand=True, padx=px(10), pady=px(5))
+
+        self.reg_preview_wrapper = tk.LabelFrame(
+            self.reg_omr_preview_frame, text="Registration No Crop",
+            bg="#2b2b36", fg="#ffffff", font=("Segoe UI", fs(8)))
+        self.reg_preview_wrapper.pack(side="top", fill="both",
+                                      expand=True, pady=(0, px(3)))
         self.reg_preview_lbl = tk.Label(self.reg_preview_wrapper, bg="#2b2b36")
         self.reg_preview_lbl.pack(fill="both", expand=True)
-        self.reg_preview_lbl.bind("<Control-MouseWheel>", lambda e: self._on_preview_zoom(e, "_crop_reg", "_zoom_reg", "tk_reg", self.reg_preview_lbl))
+        self.reg_preview_lbl.bind("<Control-MouseWheel>",
+            lambda e: self._on_preview_zoom(e, "_crop_reg", "_zoom_reg",
+                                            "tk_reg", self.reg_preview_lbl))
 
-        self.omr_preview_wrapper = tk.LabelFrame(self.reg_omr_preview_frame, text="OMR No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        self.omr_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(3, 0))
+        self.omr_preview_wrapper = tk.LabelFrame(
+            self.reg_omr_preview_frame, text="OMR No Crop",
+            bg="#2b2b36", fg="#ffffff", font=("Segoe UI", fs(8)))
+        self.omr_preview_wrapper.pack(side="top", fill="both",
+                                      expand=True, pady=(px(3), 0))
         self.omr_preview_lbl = tk.Label(self.omr_preview_wrapper, bg="#2b2b36")
         self.omr_preview_lbl.pack(fill="both", expand=True)
-        self.omr_preview_lbl.bind("<Control-MouseWheel>", lambda e: self._on_preview_zoom(e, "_crop_omr", "_zoom_omr", "tk_omr", self.omr_preview_lbl))
+        self.omr_preview_lbl.bind("<Control-MouseWheel>",
+            lambda e: self._on_preview_zoom(e, "_crop_omr", "_zoom_omr",
+                                            "tk_omr", self.omr_preview_lbl))
 
-        # Correction Form Frame
-        correction_frame = tk.LabelFrame(right_frame, text="Candidate Row Form", bg="#2b2b36", fg="#00e676", font=("Segoe UI", 10, "bold"), bd=1, height=90)
-        correction_frame.pack(fill="x", pady=(10, 0))
-        correction_frame.pack_propagate(False)
+        # ── Candidate row form ────────────────────────────────────────────────
+        correction_frame = tk.LabelFrame(
+            right_frame, text="Candidate Row Form",
+            bg="#2b2b36", fg="#00e676",
+            font=("Segoe UI", fs(10), "bold"), bd=1)
+        correction_frame.pack(fill="x", pady=(px(6), 0))
 
-        # Grid layout for read-only row details
         for col_idx in range(10):
             correction_frame.columnconfigure(col_idx, weight=1)
 
-        lbl_reg = ttk.Label(correction_frame, text="Reg No:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
-        lbl_reg.grid(row=0, column=0, sticky="w", padx=5, pady=15)
-        self.edit_reg = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=12)
-        self.edit_reg.config(state="readonly")
-        self.edit_reg.grid(row=0, column=1, sticky="ew", padx=5, pady=15)
-
-        self.number_field_lbl = ttk.Label(correction_frame, text="OMR No:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
-        self.number_field_lbl.grid(row=0, column=2, sticky="w", padx=5, pady=15)
-        self.edit_omr = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=12)
-        self.edit_omr.config(state="readonly")
-        self.edit_omr.grid(row=0, column=3, sticky="ew", padx=5, pady=15)
-
-        lbl_sig = ttk.Label(correction_frame, text="Std. Sign:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
-        lbl_sig.grid(row=0, column=4, sticky="w", padx=5, pady=15)
-        self.edit_sig = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=8, state="readonly")
-        self.edit_sig.grid(row=0, column=5, sticky="w", padx=5, pady=15)
-
-        lbl_inv_sig = ttk.Label(correction_frame, text="Inv. Sign:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
-        lbl_inv_sig.grid(row=0, column=6, sticky="w", padx=5, pady=15)
-        self.edit_inv_sig = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=8, state="readonly")
-        self.edit_inv_sig.grid(row=0, column=7, sticky="w", padx=5, pady=15)
-
-        lbl_status = ttk.Label(correction_frame, text="Status:", background="#2b2b36", font=("Segoe UI", 9, "bold"))
-        lbl_status.grid(row=0, column=8, sticky="w", padx=5, pady=15)
-        self.edit_status = ttk.Entry(correction_frame, font=("Segoe UI", 9), width=14, state="readonly")
-        self.edit_status.grid(row=0, column=9, sticky="ew", padx=5, pady=15)
+        form_rows = [
+            (0, "Reg No:",    "edit_reg",     1,  12),
+            (2, "OMR No:",    "edit_omr",     3,  12),
+            (4, "Std. Sign:", "edit_sig",     5,   8),
+            (6, "Inv. Sign:", "edit_inv_sig", 7,   8),
+            (8, "Status:",    "edit_status",  9,  14),
+        ]
+        for (lbl_col, lbl_text, attr, entry_col, entry_w) in form_rows:
+            lbl = ttk.Label(correction_frame, text=lbl_text,
+                            background="#2b2b36",
+                            font=("Segoe UI", fs(9), "bold"))
+            lbl.grid(row=0, column=lbl_col, sticky="w",
+                     padx=px(5), pady=px(10))
+            if attr == "edit_omr":
+                self.number_field_lbl = lbl
+            entry = ttk.Entry(correction_frame,
+                              font=("Segoe UI", fs(9)),
+                              width=entry_w, state="readonly")
+            entry.grid(row=0, column=entry_col, sticky="ew",
+                       padx=px(5), pady=px(10))
+            setattr(self, attr, entry)
 
     def build_status_panel(self, parent):
+        S  = self._S
+        fs = lambda n: max(7, int(n * S))
+        px = lambda n: max(1, int(n * S))
+
         status_outer = tk.LabelFrame(
             parent, text="Sheet Process Status",
             bg="#2b2b36", fg="#00e676",
-            font=("Segoe UI", 10, "bold"), bd=1, height=210)
+            font=("Segoe UI", fs(10), "bold"), bd=1)
         status_outer.pack(fill="x", side="bottom", padx=0, pady=0)
-        status_outer.pack_propagate(False)
 
         status_hdr = tk.Frame(status_outer, bg="#2b2b36")
-        status_hdr.pack(fill="x", padx=8, pady=(4, 2))
+        status_hdr.pack(fill="x", padx=px(8), pady=(px(4), px(2)))
 
         tk.Label(
             status_hdr, text="Summary:",
             bg="#2b2b36", fg="#ffffff",
-            font=("Segoe UI", 9, "bold"),
+            font=("Segoe UI", fs(9), "bold"),
             anchor="w").pack(side="left")
 
         self.status_summary_lbl = tk.Label(
             status_hdr, text="",
             bg="#2b2b36", fg="#888899",
-            font=("Segoe UI", 9),
+            font=("Segoe UI", fs(9)),
             anchor="w")
-        self.status_summary_lbl.pack(side="left", padx=(6, 0))
+        self.status_summary_lbl.pack(side="left", padx=(px(6), 0))
 
         grid_frame = tk.Frame(status_outer, bg="#2b2b36")
-        grid_frame.pack(fill="both", expand=True, padx=8, pady=(0, 6))
+        grid_frame.pack(fill="both", expand=True, padx=px(8), pady=(0, px(6)))
 
         cols = ("img", "extracted", "saved_db")
         self.status_tree = ttk.Treeview(
@@ -359,20 +470,45 @@ class AttendanceViewerDemo:
         self.status_tree.heading("img", text="Image")
         self.status_tree.heading("extracted", text="Extracted")
         self.status_tree.heading("saved_db", text="Saved to DB")
-        self.status_tree.column("img", width=220, anchor="w", stretch=True)
-        self.status_tree.column("extracted", width=95, anchor="center", stretch=True)
-        self.status_tree.column("saved_db", width=95, anchor="center", stretch=True)
+        self.status_tree.column("img",       width=px(220), anchor="w",      stretch=True)
+        self.status_tree.column("extracted", width=px(95),  anchor="center", stretch=True)
+        self.status_tree.column("saved_db",  width=px(95),  anchor="center", stretch=True)
 
-        self.status_tree.tag_configure("ok", background="#1b5e20", foreground="#a5d6a7")
-        self.status_tree.tag_configure("warning", background="#4e2600", foreground="#ffcc80")
-        self.status_tree.tag_configure("error", background="#4e0000", foreground="#ef9a9a")
+        self.status_tree.tag_configure("ok",       background="#1b5e20", foreground="#a5d6a7")
+        self.status_tree.tag_configure("warning",  background="#4e2600", foreground="#ffcc80")
+        self.status_tree.tag_configure("error",    background="#4e0000", foreground="#ef9a9a")
         self.status_tree.tag_configure("imported", background="#0d2f5e", foreground="#90caf9")
-        self.status_tree.tag_configure("pending", background="#2a2a3a", foreground="#888899")
+        self.status_tree.tag_configure("pending",  background="#2a2a3a", foreground="#888899")
 
-        status_scroll = ttk.Scrollbar(grid_frame, orient="vertical", command=self.status_tree.yview)
+        status_scroll = ttk.Scrollbar(grid_frame, orient="vertical",
+                                      command=self.status_tree.yview)
         self.status_tree.configure(yscrollcommand=status_scroll.set)
         status_scroll.pack(side="right", fill="y")
         self.status_tree.pack(side="left", fill="both", expand=True)
+
+    def _on_window_resize(self, event):
+        """Redistribute treeview column widths when the window is resized."""
+        # Only react to the root window's own Configure events
+        if event.widget is not self.root:
+            return
+        self.root.after_idle(self._resize_tree_columns)
+
+    def _resize_tree_columns(self):
+        """Scale the nominal-roll treeview columns proportionally to the
+        current right-panel width so they always fill the available space."""
+        if not hasattr(self, "tree") or not self.tree.winfo_exists():
+            return
+        self.root.update_idletasks()
+        avail = self.tree.winfo_width() - 4        # subtract scrollbar gutter
+        if avail < 50:
+            return
+        # Proportional weights: row=1, status=2, sig=1.5, inv_sig=1.5,
+        #                       reg_no=2, omr_no=2, qpvc=1
+        weights = {"row": 1, "status": 2, "sig": 1.5,
+                   "inv_sig": 1.5, "reg_no": 2, "omr_no": 2, "qpvc": 1}
+        total_w = sum(weights.values())
+        for col, w in weights.items():
+            self.tree.column(col, width=max(40, int(avail * w / total_w)))
 
     def _status_icon(self, status):
         return {"ok": "✔", "warning": "⚠", "error": "✘",
