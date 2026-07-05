@@ -253,13 +253,16 @@ class AttendanceViewerDemo:
         self.inv_sig_preview_lbl = tk.Label(self.inv_sig_preview_wrapper, bg="#2b2b36")
         self.inv_sig_preview_lbl.pack(fill="both", expand=True)
         
-        self.reg_preview_wrapper = tk.LabelFrame(details_frame, text="Registration No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        self.reg_preview_wrapper.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        self.number_preview_frame = tk.Frame(details_frame, bg="#2b2b36")
+        self.number_preview_frame.pack(side="left", fill="both", expand=True, padx=10, pady=5)
+
+        self.reg_preview_wrapper = tk.LabelFrame(self.number_preview_frame, text="Registration No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
+        self.reg_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(0, 3))
         self.reg_preview_lbl = tk.Label(self.reg_preview_wrapper, bg="#2b2b36")
         self.reg_preview_lbl.pack(fill="both", expand=True)
 
-        self.omr_preview_wrapper = tk.LabelFrame(details_frame, text="OMR No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
-        self.omr_preview_wrapper.pack(side="left", fill="both", expand=True, padx=5, pady=5)
+        self.omr_preview_wrapper = tk.LabelFrame(self.number_preview_frame, text="OMR No Crop", bg="#2b2b36", fg="#ffffff", font=("Segoe UI", 8))
+        self.omr_preview_wrapper.pack(side="top", fill="both", expand=True, pady=(3, 0))
         self.omr_preview_lbl = tk.Label(self.omr_preview_wrapper, bg="#2b2b36")
         self.omr_preview_lbl.pack(fill="both", expand=True)
 
@@ -548,8 +551,9 @@ class AttendanceViewerDemo:
                 y_centers = [580, 815, 1049, 1283, 1521, 1754]
                 px_offset, ax_offset = 423, 473
                 sig_x0, sig_x1 = 330, 810
-                reg_x0, reg_x1 = 830, 1030
-                omr_x0, omr_x1 = 1090, 1250
+                #reg_x0, reg_x1 = 830, 1030  
+                reg_x0, reg_x1 = 760, 950             
+                omr_x0, omr_x1 = 1090, 21450
             else:
                 expected_border = 133
                 from core.nominal_roll_type2 import detect_left_border as detect_left_border2
@@ -781,7 +785,8 @@ class AttendanceViewerDemo:
             # Crop cells
             if self.is_type1:
                 sig_crop = self.current_img[yc+25:yc+105, 330+shift : 810+shift]
-                reg_crop = self.current_img[yc-25:yc+25, 830+shift : 1030+shift]
+                #reg_crop = self.current_img[yc-25:yc+25, 830+shift : 1030+shift]
+                reg_crop = self.current_img[yc-40:yc+25, 630+shift : 1030+shift]
                 omr_crop = self.current_img[yc-25:yc+25, 1090+shift : 1250+shift]
             else:
                 sig_crop = self.current_img[yc+40:yc+130, 380+shift : 850+shift]

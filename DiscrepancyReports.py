@@ -10,7 +10,7 @@ from openpyxl.styles import Font
 CONNECTION_STRING = (
     "DRIVER={ODBC Driver 17 for SQL Server};"
    "SERVER=3.109.160.126;"
-   "DATABASE=KPSCOMRICRExtraction;"
+   "DATABASE=KPSCOMRICRExtractionV2;"
    "UID=KPSCDev;"
    "PWD=kpscD5v;"
 )
