@@ -4,19 +4,7 @@ import pyodbc
 import hashlib
 import secrets
 import base64
-
-# =====================================================
-# DATABASE
-# =====================================================
-
-CONNECTION_STRING = (
-    "DRIVER={ODBC Driver 17 for SQL Server};"
-    "SERVER=3.109.160.126;"
-    "DATABASE=KPSCOMRICRExtraction;"
-    "UID=KPSCDev;"
-    "PWD=kpscD5v;"
-    "TrustServerCertificate=yes;"
-)
+import db_credentials
 
 # =====================================================
 # HASH & SALT
@@ -89,7 +77,7 @@ class ChangePassword:
     def get_connection(self):
 
         return pyodbc.connect(
-            CONNECTION_STRING
+            db_credentials.build_connection_string()
         )
 
     # =================================================

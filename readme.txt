@@ -13,7 +13,7 @@ Database Settings to update connection details later
 Responsive layout scales fonts, spacing, and card size from screen and window size
 Main window hides while a module is open; returns when you close the module
 db_credentials.py — secure credential storage
-Credentials are stored at: %APPDATA%\KPSC_OMR\db_config.kpsc
+Credentials are stored at: %APPDATA%\Roadming\KPSC_OMR\db_config.kpsc
 
 Security:
 

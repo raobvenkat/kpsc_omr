@@ -3,26 +3,7 @@ from tkinter import ttk, filedialog, messagebox
 import pyodbc
 from openpyxl import Workbook
 from openpyxl.styles import Font
-
-# ==========================================================
-# SQL SERVER CONNECTION
-# ==========================================================
-CONNECTION_STRING = (
-    "DRIVER={ODBC Driver 17 for SQL Server};"
-   "SERVER=3.109.160.126;"
-   "DATABASE=KPSCOMRICRExtractionV2;"
-   "UID=KPSCDev;"
-   "PWD=kpscD5v;"
-)
-
-# For Windows Authentication use:
-#
-# CONNECTION_STRING = (
-#     "DRIVER={ODBC Driver 17 for SQL Server};"
-#     "SERVER=YOUR_SERVER;"
-#     "DATABASE=YOUR_DATABASE;"
-#     "Trusted_Connection=yes;"
-# )
+import db_credentials
 
 
 class DiscrepancyReports:
@@ -227,8 +208,7 @@ class DiscrepancyReports:
     # ======================================================
 
     def get_connection(self):
-
-        return pyodbc.connect(CONNECTION_STRING)
+        return db_credentials.get_sql_connection()
 
     # ======================================================
     # LOAD REPORTS
