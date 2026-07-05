@@ -232,15 +232,16 @@ class AttendanceViewerDemo:
         tree_scroll_y = ttk.Scrollbar(table_frame, orient="vertical")
         tree_scroll_y.pack(side="right", fill="y")
         
-        self.tree = ttk.Treeview(table_frame, columns=("row", "status", "sig", "inv_sig", "reg_no", "omr_no"), show="headings", yscrollcommand=tree_scroll_y.set, height=6)
+        self.tree = ttk.Treeview(table_frame, columns=("row", "status", "sig", "inv_sig", "reg_no", "omr_no", "qpvc"), show="headings", yscrollcommand=tree_scroll_y.set, height=6)
         tree_scroll_y.config(command=self.tree.yview)
         
         self.tree.heading("row", text="Row")
         self.tree.heading("status", text="Status")
-        self.tree.heading("sig", text="Std. Signature")
-        self.tree.heading("inv_sig", text="Inv. Signature")
-        self.tree.heading("reg_no", text="Registration No")
+        self.tree.heading("sig", text="Std. Sign")
+        self.tree.heading("inv_sig", text="Inv. Sign")
+        self.tree.heading("reg_no", text="Reg No")
         self.tree.heading("omr_no", text="OMR No")
+        self.tree.heading("qpvc", text="QPVC")
         
         self.tree.column("row", width=60, anchor="center")
         self.tree.column("status", width=120, anchor="center")
@@ -248,6 +249,7 @@ class AttendanceViewerDemo:
         self.tree.column("inv_sig", width=120, anchor="center")
         self.tree.column("reg_no", width=120, anchor="center")
         self.tree.column("omr_no", width=120, anchor="center")
+        self.tree.column("qpvc", width=60, anchor="center")
         self.tree.pack(fill="x", expand=False, padx=5, pady=5)
         self.tree.bind("<<TreeviewSelect>>", self.on_row_selected)
         
@@ -707,6 +709,11 @@ class AttendanceViewerDemo:
                 
                 # Reg/OMR box (cyan/yellow)
                 if is_type1:
+                    # QP Version Code box (orange)
+                    cv2.rectangle(annotated, (530 + shift, yc - 30), (810 + shift, yc + 30), (0, 165, 255), 2)
+                    qpvc_val = records[idx].get("qpvc", "") if idx < len(records) else ""
+                    cv2.putText(annotated, f"QPVC:{qpvc_val}", (535 + shift, yc - 35),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 1)
                     # Registration No box (yellow)
                     cv2.rectangle(annotated, (reg_x0 + shift, yc - 25), (reg_x1 + shift, yc + 25), (255, 255, 0), 2)
                     # OMR No box (cyan)
@@ -742,7 +749,8 @@ class AttendanceViewerDemo:
                     "Yes" if self.current_invigilator_signed else "No",
                     r.get("registration_no", ""),
                     (r.get("omr_no", "") if is_type1
-                     else r.get("qcab_serial_no", ""))
+                     else r.get("qcab_serial_no", "")),
+                    r.get("qpvc", "") if is_type1 else ""
                 ))
             
             # Auto-select row 1 in treeview
@@ -976,6 +984,7 @@ class AttendanceViewerDemo:
             reg_val = record.get("registration_no", "")
             omr_val = record.get("omr_no", "")
             qcab_val = record.get("qcab_serial_no", "")
+            qpvc_val = record.get("qpvc", "")
 
             if is_type1:
                 cursor.execute("""
@@ -989,7 +998,8 @@ class AttendanceViewerDemo:
                         @status = ?,
                         @signature_present = ?,
                         @omr_no = ?,
-                        @registration_no = ?
+                        @registration_no = ?,
+                        @qpvc = ?
                 """, (
                     filename,
                     center_code,
@@ -1001,6 +1011,7 @@ class AttendanceViewerDemo:
                     signature_present,
                     omr_val,
                     reg_val,
+                    qpvc_val,
                 ))
             else:
                 cursor.execute("""
@@ -1278,6 +1289,7 @@ class AttendanceViewerDemo:
                         reg_val = row.get("Registration No", "")
                         omr_val = row.get("OMR No", "")
                         qcab_val = row.get("QCAB Serial No", "")
+                        qpvc_val = row.get("QPVC", "")
                             
                         self.attendance_csv_records[filename]["records"].append({
                             "row_number": int(row.get("Row Number", 1)),
@@ -1285,7 +1297,8 @@ class AttendanceViewerDemo:
                             "signature_present": (row.get("Signature Present") == "Yes"),
                             "registration_no": reg_val,
                             "omr_no": omr_val,
-                            "qcab_serial_no": qcab_val
+                            "qcab_serial_no": qcab_val,
+                            "qpvc": qpvc_val
                         })
                         
                 for fname in self.attendance_csv_records:
@@ -1304,7 +1317,7 @@ class AttendanceViewerDemo:
                 "Filename", "Center Code", "Sub Center Code", "Subject Code",
                 "Invigilator Signed", "Row Number", "Status",
                 "Signature Present", "Registration No", "OMR No",
-                "QCAB Serial No"
+                "QCAB Serial No", "QPVC"
             ])
             for filename in sorted(self.file_combo["values"]):
                 filename = self.normalize_image_path(filename)
@@ -1318,6 +1331,7 @@ class AttendanceViewerDemo:
                         reg_no = r.get("registration_no", "")
                         omr_no = r.get("omr_no", "")
                         qcab_no = r.get("qcab_serial_no", "")
+                        qpvc_no = r.get("qpvc", "")
 
                         writer.writerow([
                             filename,
@@ -1330,7 +1344,8 @@ class AttendanceViewerDemo:
                             "Yes" if r["signature_present"] else "No",
                             reg_no,
                             omr_no,
-                            qcab_no
+                            qcab_no,
+                            qpvc_no
                         ])
 
     def export_results_to_excel(self):

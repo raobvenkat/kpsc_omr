@@ -405,6 +405,26 @@ def read_handwritten_reg_no_9(crop_bgr):
     return "".join(digits).strip()
 
 
+def read_qpvc(crop_bgr, reader):
+    """
+    Reads the QP Version Code (A/B/C/D) from a printed single-letter cell.
+    Uses EasyOCR with an uppercase-letter allowlist on an upscaled crop.
+    Returns one of 'A', 'B', 'C', 'D', or '' if not recognised.
+    """
+    if crop_bgr is None or crop_bgr.size == 0:
+        return ""
+    enlarged = cv2.resize(crop_bgr, None, fx=3.0, fy=3.0, interpolation=cv2.INTER_CUBIC)
+    results = reader.readtext(enlarged, detail=1, allowlist="ABCDabcd", paragraph=False)
+    best = ""
+    best_conf = 0.0
+    for _, text, conf in results:
+        letter = text.strip().upper()
+        if letter in ("A", "B", "C", "D") and conf > best_conf:
+            best = letter
+            best_conf = conf
+    return best
+
+
 def read_registration_number(crop_bgr, reader):
     """Read a printed or handwritten registration number from an open field.
 
@@ -569,16 +589,22 @@ def process_attendance_sheet1(img_path, reader=None):
         # C. Registration Number OCR (using same logic as OMR no)
         reg_x0, reg_x1 = 830, 1030
         # The number is written below the field label.  The old symmetric
-        # crop included the label and clipped the bottom of tall strokes.
+        # crop includes the label and clipped the bottom of tall strokes.
         reg_crop = img[yc-5:yc+45, reg_x0+shift : reg_x1+shift]
         reg_no = read_registration_number(reg_crop, reader)
-                
+
+        # D. QP Version Code — single printed letter (A/B/C/D) in the box
+        #    between the bubbles and Registration No (~x 530-810, centered at yc)
+        qpvc_crop = img[yc-30:yc+30, 530+shift : 810+shift]
+        qpvc = read_qpvc(qpvc_crop, reader)
+
         records.append({
             "row_number": idx + 1,
             "status": status,
             "signature_present": signature_present,
             "registration_no": reg_no,
-            "omr_no": omr_no
+            "omr_no": omr_no,
+            "qpvc": qpvc
         })
         
     # Extract header codes
