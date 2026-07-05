@@ -51,6 +51,15 @@ BEGIN
 END;
 GO
 
+/* Add qpvc column if not present (QP Version Code — A/B/C/D). */
+IF OBJECT_ID(N'dbo.attendance_sheet_data_1', N'U') IS NOT NULL
+   AND COL_LENGTH(N'dbo.attendance_sheet_data_1', N'qpvc') IS NULL
+BEGIN
+    ALTER TABLE dbo.attendance_sheet_data_1
+        ADD qpvc NVARCHAR(1) NULL;
+END;
+GO
+
 /* ============================================================
    TABLE: attendance_sheet_data2  (Nominal Roll Sheet 2 / QCAB)
    ============================================================ */
@@ -114,15 +123,16 @@ GO
    ============================================================ */
 CREATE OR ALTER PROCEDURE dbo.sp_insert_attendance_sheet_data_1
     @filename           NVARCHAR(500),
-    @center_code        NVARCHAR(50) = NULL,
-    @subcenter_code     NVARCHAR(50) = NULL,
-    @subject_code       NVARCHAR(50) = NULL,
-    @invigilator_signed BIT = 0,
+    @center_code        NVARCHAR(50)  = NULL,
+    @subcenter_code     NVARCHAR(50)  = NULL,
+    @subject_code       NVARCHAR(50)  = NULL,
+    @invigilator_signed BIT           = 0,
     @row_number         INT,
-    @status             NVARCHAR(50) = NULL,
-    @signature_present  BIT = 0,
-    @omr_no             NVARCHAR(50) = NULL,
-    @registration_no    NVARCHAR(50) = NULL
+    @status             NVARCHAR(50)  = NULL,
+    @signature_present  BIT           = 0,
+    @omr_no             NVARCHAR(50)  = NULL,
+    @registration_no    NVARCHAR(50)  = NULL,
+    @qpvc               NVARCHAR(1)   = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -134,6 +144,12 @@ BEGIN
           AND row_number = @row_number
     )
     BEGIN
+        -- Update qpvc if it has been newly extracted
+        UPDATE dbo.attendance_sheet_data_1
+        SET qpvc = @qpvc
+        WHERE filename   = @filename
+          AND row_number = @row_number
+          AND (@qpvc IS NOT NULL AND qpvc IS NULL);
         RETURN;
     END;
 
@@ -147,7 +163,8 @@ BEGIN
         status,
         signature_present,
         omr_no,
-        registration_no
+        registration_no,
+        qpvc
     )
     VALUES (
         @filename,
@@ -159,7 +176,8 @@ BEGIN
         @status,
         @signature_present,
         @omr_no,
-        @registration_no
+        @registration_no,
+        @qpvc
     );
 END;
 GO
