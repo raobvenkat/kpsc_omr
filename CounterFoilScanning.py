@@ -208,6 +208,7 @@ def read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw):
     
     img_draw = img.copy()
     detected_digits = []
+    bubble_Th_status = 0
     
     for i in range(b_conf["cols"]):
         cx = int(grid_x + col_start + i * col_spacing)
@@ -228,8 +229,13 @@ def read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw):
         unmarked_vals = [x[1] for x in col_vals_sorted[2:]]
         avg_unmarked = np.mean(unmarked_vals) if unmarked_vals else 255
         contrast = col_vals_sorted[1][1] - col_vals_sorted[0][1]
+        fill_percent = 0.0
+        if avg_unmarked > 0:
+            fill_percent = 100.0 * (avg_unmarked - min_val) / avg_unmarked
         
         is_filled = (avg_unmarked - min_val > 25) and (contrast > 12)
+        if is_filled and fill_percent < 35.0:
+            bubble_Th_status = 1
         
         if is_filled:
             detected_digits.append(str(min_idx))
@@ -252,7 +258,7 @@ def read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw):
     x_end_crop = min(w_d, int(grid_x + 580 * scale_x))
     crop_debug = img_draw[y_start_crop:y_end_crop, x_start_crop:x_end_crop]
     
-    return bubble_regno, crop_debug, grid_x, grid_y, align_method
+    return bubble_regno, crop_debug, grid_x, grid_y, align_method, bubble_Th_status
 
 # ──────────────────────────────────────────────────────────
 # DECOUPLED ALIGNMENT & BUBBLE READING (B&W PADDED FILES)
@@ -735,7 +741,7 @@ def process_single_sheet_for_demo(img_path):
         scale_y = scale_x
         
     # 1. Alignment & Bubble Reading
-    bubble_regno, debug_grid_img, grid_x, grid_y, align_method = read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw)
+    bubble_regno, debug_grid_img, grid_x, grid_y, align_method, bubble_Th_status = read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw)
             
     # 2. Handwritten Digit OCR
     handwritten_regno = read_handwritten_regno(img, tpl, scale_x, scale_y, grid_x, grid_y, is_bw)
@@ -828,6 +834,7 @@ def process_single_sheet_for_demo(img_path):
         "bubble_regno": bubble_regno,
         "handwritten_regno": handwritten_regno,
         "final_regno": final_regno,
+        "bubble_Th_status": bubble_Th_status,
         
         "subject_code": subject_code,
         "booklet_number": booklet_sl_no,        # kept as "booklet_number" for UI compat
@@ -2008,6 +2015,10 @@ class VisualOMRViewerDemo:
             result.get("omr_threshold", 0.0),
             int(bool(result.get("whitenerflag", False)))
         ]
+
+        if self.check_column_exists(conn, table_name, "bubble_Th_status"):
+            columns.append("bubble_Th_status")
+            values.append(int(result.get("bubble_Th_status", 0)))
 
         if self.check_column_exists(conn, table_name, "isblack"):
             columns.append("isblack")
