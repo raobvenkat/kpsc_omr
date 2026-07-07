@@ -918,7 +918,12 @@ class VisualOMRViewerDemo:
                     font=("Segoe UI", fs(9), "bold"),
                     borderwidth=0, focuscolor="none",
                     padding=(px(8), px(4)))
+        s.configure("Large.TButton", background=AC, foreground="#fff",
+                    font=("Segoe UI", fs(14), "bold"),
+                    borderwidth=0, focuscolor="none",
+                    padding=(px(10), px(8)))
         s.map("TButton", background=[("active", self._ACCH), ("disabled", "#44445a")])
+        s.map("Large.TButton", background=[("active", self._ACCH), ("disabled", "#44445a")])
         s.configure("TEntry", fieldbackground=EN, foreground=FG,
                     insertcolor=FG, font=("Consolas", fs(9)))
         s.map("TEntry",
@@ -943,18 +948,19 @@ class VisualOMRViewerDemo:
             fill="x", padx=self._px(6), pady=pady)
 
     def _field(self, parent, label, font_name="Consolas",
-               font_size=10, bold=False, readonly=False):
+               font_size=10, label_font_size=None, bold=False, readonly=False):
         px = self._px
+        label_font = self._fs(label_font_size if label_font_size is not None else 9)
         tk.Label(parent, text=label,
                  bg=self._PANEL, fg=self._FG,
-                 font=("Segoe UI", self._fs(9), "bold"),
-                 anchor="w").pack(fill="x", padx=px(8), pady=(px(3), 0))
+                 font=("Segoe UI", label_font, "bold"),
+                 anchor="w").pack(fill="x", padx=px(8), pady=(px(3), px(2)))
         e = ttk.Entry(parent,
                       font=(font_name, self._fs(font_size),
                             "bold" if bold else "normal"))
         if readonly:
             e.config(state="readonly")
-        e.pack(fill="x", padx=px(8), pady=(1, px(2)))
+        e.pack(fill="x", padx=px(8), pady=(1, px(8)))
         return e
 
     def build_ui(self):
@@ -982,25 +988,28 @@ class VisualOMRViewerDemo:
 
         # Left side: image navigation + folder + status + progress
         ttk.Label(top, text="Image:", style="Pan.TLabel",
-                  font=("Segoe UI", fs(9), "bold")).pack(
+                  font=("Segoe UI", fs(16), "bold")).pack(
                       side="left", padx=(px(10), px(3)))
 
-        self.prev_btn = ttk.Button(top, text="◀", width=3,
-            command=lambda: self.navigate_sheet(-1), state="disabled")
+        self.prev_btn = ttk.Button(top, text="◀", width=4,
+            command=lambda: self.navigate_sheet(-1), state="disabled",
+            style="Large.TButton")
         self.prev_btn.pack(side="left", padx=px(2))
 
         self.file_combo = ttk.Combobox(top, values=[], state="readonly",
-                                       width=52, font=("Segoe UI", fs(9)))
+                                       width=52, font=("Segoe UI", fs(14)))
         self.file_combo.pack(side="left", padx=px(3))
         self.file_combo.bind("<<ComboboxSelected>>",
                              lambda e: self.process_selected_sheet())
 
-        self.next_btn = ttk.Button(top, text="▶", width=3,
-            command=lambda: self.navigate_sheet(1), state="disabled")
+        self.next_btn = ttk.Button(top, text="▶", width=4,
+            command=lambda: self.navigate_sheet(1), state="disabled",
+            style="Large.TButton")
         self.next_btn.pack(side="left", padx=px(2))
 
         ttk.Button(top, text="📂 Select Folder",
-                   command=self.browse_folder).pack(side="left", padx=px(6))
+                   command=self.browse_folder,
+                   style="Large.TButton").pack(side="left", padx=px(6))
 
         self.status_lbl = ttk.Label(top, text="Ready",
             style="Pan.TLabel",
@@ -1016,10 +1025,12 @@ class VisualOMRViewerDemo:
         # Right side: Process All + Export buttons
         self.export_btn = ttk.Button(top, text="Export to Excel",
             command=self.export_results_to_excel, width=16,
+            style="Large.TButton",
             state="disabled")
         self.export_btn.pack(side="right", padx=(px(2), px(12)))
         self.All_btn = ttk.Button(top, text="⚙  Process All",
-            command=self.process_all_sheets_to_mssql, width=14)
+            command=self.process_all_sheets_to_mssql, width=14,
+            style="Large.TButton")
         self.All_btn.pack(side="right", padx=px(2))
 
         # thin separator below controls
@@ -1253,7 +1264,8 @@ class VisualOMRViewerDemo:
 
         # Booklet Serial No
         self.edit_booklet = self._field(
-            self.right_frame, "Booklet Serial No  (BookletSlNo)", bold=True)
+            self.right_frame, "Booklet Serial No  (BookletSlNo)",
+            font_size=14, label_font_size=14, bold=True)
 
         tk.Label(self.right_frame, text="OCR Confidence:",
                  bg=P, fg=FGD, font=("Segoe UI", fs(12)),
@@ -1270,7 +1282,7 @@ class VisualOMRViewerDemo:
         bc_row.pack(fill="x", padx=px(8), pady=(px(3), px(1)))
         tk.Label(bc_row, text="Decoded Barcode:",
                  bg=P, fg=FG,
-                 font=("Segoe UI", fs(12), "bold")).pack(side="left")
+                 font=("Segoe UI", fs(14), "bold")).pack(side="left")
         self.edit_barcode = ttk.Entry(
             bc_row, font=("Consolas", fs(14), "bold"))
         self.edit_barcode.pack(side="right", fill="x",
@@ -1281,17 +1293,17 @@ class VisualOMRViewerDemo:
         # OMR Bubble reading
         self.edit_bubble = self._field(
             self.right_frame, "OMR Bubble Reading",
-            font_size=12, bold=True)
+            font_size=14, label_font_size=14, bold=True)
 
         # Handwritten OCR
         self.edit_hw = self._field(
             self.right_frame, "Handwritten OCR Reading",
-            font_size=12, bold=True)
+            font_size=14, label_font_size=14, bold=True)
 
         # Resolved Register No
         self.edit_final = self._field(
             self.right_frame, "Resolved Register No  (SOP Output)",
-            font_size=12, bold=True)
+            font_size=14, label_font_size=14, bold=True)
 
         self.edit_bubble.bind("<KeyRelease>",
                               self.recalculate_discrepancy_and_final)
@@ -1316,23 +1328,23 @@ class VisualOMRViewerDemo:
 
         tk.Label(sig_row, text="Candidate Signed:",
                  bg=P, fg=FG,
-                 font=("Segoe UI", fs(12), "bold")).grid(
+                 font=("Segoe UI", fs(14), "bold")).grid(
                      row=0, column=0, sticky="w", pady=px(2))
         self.edit_cand_sig = ttk.Combobox(
             sig_row, values=["YES", "NO"],
             state="readonly", width=7,
-            font=("Segoe UI", fs(12)))
+            font=("Segoe UI", fs(14)))
         self.edit_cand_sig.grid(row=0, column=1,
                                 sticky="w", padx=(px(4), px(14)))
 
         tk.Label(sig_row, text="Invigilator Signed:",
                  bg=P, fg=FG,
-                 font=("Segoe UI", fs(12), "bold")).grid(
+                 font=("Segoe UI", fs(14), "bold")).grid(
                      row=0, column=2, sticky="w")
         self.edit_inv_sig = ttk.Combobox(
             sig_row, values=["YES", "NO"],
             state="readonly", width=7,
-            font=("Segoe UI", fs(12)))
+            font=("Segoe UI", fs(14)))
         self.edit_inv_sig.grid(row=0, column=3,
                                sticky="w", padx=(px(4), 0))
 
