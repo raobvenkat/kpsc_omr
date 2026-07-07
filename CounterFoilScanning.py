@@ -943,11 +943,11 @@ class VisualOMRViewerDemo:
             fill="x", padx=self._px(6), pady=pady)
 
     def _field(self, parent, label, font_name="Consolas",
-               font_size=9, bold=False, readonly=False):
+               font_size=10, bold=False, readonly=False):
         px = self._px
         tk.Label(parent, text=label,
                  bg=self._PANEL, fg=self._FG,
-                 font=("Segoe UI", self._fs(8), "bold"),
+                 font=("Segoe UI", self._fs(9), "bold"),
                  anchor="w").pack(fill="x", padx=px(8), pady=(px(3), 0))
         e = ttk.Entry(parent,
                       font=(font_name, self._fs(font_size),
@@ -967,7 +967,7 @@ class VisualOMRViewerDemo:
         header.pack_propagate(False)
 
         tk.Label(header,
-                 text="OMR ICR OCR Extraction Engine",
+                 text="Counter Foil Extraction Engine",
                  bg=P, fg=AC,
                  font=("Segoe UI", fs(18), "bold"),
                  anchor="center").pack(fill="both", expand=True)
@@ -1039,9 +1039,50 @@ class VisualOMRViewerDemo:
             bg=P, fg=AC,
             font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
         col0.grid(row=0, column=0, sticky="nsew", padx=(0, px(4)))
-        self.full_omr_lbl = tk.Label(col0, bg=P)
-        self.full_omr_lbl.pack(fill="both", expand=True,
-                               padx=px(3), pady=px(3))
+        col0.columnconfigure(0, weight=1)
+        col0.rowconfigure(1, weight=1)
+
+        self.full_omr_zoom_frame = tk.Frame(col0, bg=P)
+        self.full_omr_zoom_frame.grid(row=0, column=0, sticky="ew",
+                                      padx=px(3), pady=(px(3), px(2)))
+        ttk.Button(self.full_omr_zoom_frame, text="−", width=3,
+                   command=lambda: self.adjust_original_zoom(-0.25)).pack(side="left")
+        self.full_omr_zoom_lbl = ttk.Label(self.full_omr_zoom_frame, text="100%", width=7)
+        self.full_omr_zoom_lbl.pack(side="left", padx=px(4))
+        ttk.Button(self.full_omr_zoom_frame, text="+", width=3,
+                   command=lambda: self.adjust_original_zoom(0.25)).pack(side="left")
+
+        self.full_omr_zoom = 1.0
+        self._full_omr_cv_img = None
+        self._full_omr_photo = None
+
+        self.full_omr_canvas = tk.Canvas(col0, bg=P,
+                                         highlightthickness=0, bd=0)
+        self.full_omr_canvas.grid(row=1, column=0, sticky="nsew",
+                                   padx=px(3), pady=(0, px(3)))
+
+        self.full_omr_xscroll = ttk.Scrollbar(col0, orient="horizontal",
+                                              command=self.full_omr_canvas.xview)
+        self.full_omr_yscroll = ttk.Scrollbar(col0, orient="vertical",
+                                              command=self.full_omr_canvas.yview)
+        self.full_omr_xscroll.grid(row=2, column=0, sticky="ew")
+        self.full_omr_yscroll.grid(row=1, column=1, sticky="ns")
+        self.full_omr_canvas.configure(xscrollcommand=self.full_omr_xscroll.set,
+                                       yscrollcommand=self.full_omr_yscroll.set)
+
+        self.full_omr_canvas_frame = tk.Frame(self.full_omr_canvas, bg=P)
+        self._full_omr_window = self.full_omr_canvas.create_window(
+            (0, 0), window=self.full_omr_canvas_frame, anchor="nw")
+        self.full_omr_img_lbl = tk.Label(self.full_omr_canvas_frame, bg=P,
+                                         text="No image loaded", fg=FGD)
+        self.full_omr_img_lbl.pack(fill="both", expand=True)
+        self.full_omr_canvas.bind("<Configure>",
+            lambda e: self._refresh_full_omr_image())
+        self.full_omr_canvas.bind_all("<MouseWheel>",
+            lambda e: self.full_omr_canvas.yview_scroll(
+                int(-1*(e.delta/120)), "units"))
+
+        self.build_status_panel(col0)
 
         # COL 1 — Centre crops
         col1 = tk.Frame(content, bg=BG)
@@ -1094,150 +1135,37 @@ class VisualOMRViewerDemo:
         self.inv_sig_lbl = tk.Label(inv_wrap, bg=P)
         self.inv_sig_lbl.pack(fill="both", expand=True)
 
-        # COL 2 — Results (scrollable)
+        # COL 2 — Results
         col2_outer = tk.LabelFrame(content,
             text=" Extraction & Processing Results ",
             bg=P, fg=AC,
             font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
         col2_outer.grid(row=0, column=2, sticky="nsew")
+        col2_outer.columnconfigure(0, weight=1)
+        col2_outer.rowconfigure(0, weight=1)
 
-        col2_canvas = tk.Canvas(col2_outer, bg=P,
-                                highlightthickness=0, bd=0)
-        col2_scroll = ttk.Scrollbar(col2_outer, orient="vertical",
-                                    command=col2_canvas.yview)
-        col2_canvas.configure(yscrollcommand=col2_scroll.set)
-        col2_scroll.pack(side="right", fill="y")
-        col2_canvas.pack(side="left", fill="both", expand=True)
-
-        self.right_frame = tk.Frame(col2_canvas, bg=P)
-        _win = col2_canvas.create_window((0, 0),
-                                         window=self.right_frame, anchor="nw")
-
-        col2_canvas.bind("<Configure>",
-            lambda e: col2_canvas.itemconfig(_win, width=e.width))
-        self.right_frame.bind("<Configure>",
-            lambda e: col2_canvas.configure(
-                scrollregion=col2_canvas.bbox("all")))
-        col2_canvas.bind_all("<MouseWheel>",
-            lambda e: col2_canvas.yview_scroll(
-                int(-1*(e.delta/120)), "units"))
+        self.right_frame = tk.Frame(col2_outer, bg=P)
+        self.right_frame.grid(row=0, column=0, sticky="nsew",
+                              padx=px(4), pady=px(4))
 
         self.build_results_panel()
-        
-    def build_results_panel(self):
-        """Populate the scrollable right panel with all result fields."""
+
+    def build_status_panel(self, parent):
+        """Build the status grid beneath the original scanned sheet panel."""
         px = self._px; fs = self._fs
-        P = self._PANEL; FG = self._FG; FGD = self._FGD
+        P = self._PANEL; FG = self._FG; FGD = self._FGD; AC = self._ACCENT
 
-        # Metadata
-        self.meta_lbl = tk.Label(self.right_frame,
-            text="File: —\nResolution: —\nType: —",
-            justify="left", anchor="w",
-            bg=P, fg=FGD, font=("Segoe UI", fs(8)))
-        self.meta_lbl.pack(fill="x", padx=px(8), pady=(px(4), px(2)))
+        status_frame = tk.LabelFrame(parent, text=" Sheet Process Status ",
+            bg=P, fg=AC,
+            font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
+        status_frame.grid(row=3, column=0, sticky="nsew",
+                          padx=px(3), pady=(px(4), px(3)))
+        status_frame.columnconfigure(0, weight=1)
+        status_frame.rowconfigure(1, weight=1)
 
-        self._sep(self.right_frame)
-
-        # Subject Code
-        self.edit_subject = self._field(
-            self.right_frame, "Subject Code", bold=True)
-
-        # Booklet Serial No
-        self.edit_booklet = self._field(
-            self.right_frame, "Booklet Serial No  (BookletSlNo)", bold=True)
-
-        tk.Label(self.right_frame, text="OCR Confidence:",
-                 bg=P, fg=FGD, font=("Segoe UI", fs(7)),
-                 anchor="w").pack(fill="x", padx=px(8))
-        self.edit_booklet_threshold = ttk.Entry(
-            self.right_frame, font=("Consolas", fs(8)))
-        self.edit_booklet_threshold.config(state="readonly")
-        self.edit_booklet_threshold.pack(fill="x", padx=px(8), pady=(1, px(3)))
-
-        self._sep(self.right_frame)
-
-        # Barcode — inline label + entry
-        bc_row = tk.Frame(self.right_frame, bg=P)
-        bc_row.pack(fill="x", padx=px(8), pady=(px(3), px(1)))
-        tk.Label(bc_row, text="Decoded Barcode:",
-                 bg=P, fg=FG,
-                 font=("Segoe UI", fs(8), "bold")).pack(side="left")
-        self.edit_barcode = ttk.Entry(
-            bc_row, font=("Consolas", fs(8), "bold"))
-        self.edit_barcode.pack(side="right", fill="x",
-                               expand=True, padx=(px(6), 0))
-
-        self._sep(self.right_frame)
-
-        # OMR Bubble reading
-        self.edit_bubble = self._field(
-            self.right_frame, "OMR Bubble Reading",
-            font_size=10, bold=True)
-
-        # Handwritten OCR
-        self.edit_hw = self._field(
-            self.right_frame, "Handwritten OCR Reading",
-            font_size=10, bold=True)
-
-        # Resolved Register No
-        self.edit_final = self._field(
-            self.right_frame, "Resolved Register No  (SOP Output)",
-            font_size=11, bold=True)
-
-        self.edit_bubble.bind("<KeyRelease>",
-                              self.recalculate_discrepancy_and_final)
-        self.edit_hw.bind("<KeyRelease>",
-                          self.recalculate_discrepancy_and_final)
-
-        # Discrepancy banner
-        self.disc_frame = tk.Frame(self.right_frame, bg=P,
-                                   bd=1, relief="solid")
-        self.disc_frame.pack(fill="x", padx=px(8), pady=px(4))
-        self.disc_lbl = tk.Label(self.disc_frame,
-            text="DISCREPANCY STATUS: OK",
-            bg="#2e7d32", fg="#ffffff",
-            font=("Segoe UI", fs(8), "bold"), height=2)
-        self.disc_lbl.pack(fill="x")
-
-        self._sep(self.right_frame)
-
-        # Signatures — side by side on one row
-        sig_row = tk.Frame(self.right_frame, bg=P)
-        sig_row.pack(fill="x", padx=px(8), pady=px(3))
-
-        tk.Label(sig_row, text="Candidate Signed:",
-                 bg=P, fg=FG,
-                 font=("Segoe UI", fs(8), "bold")).grid(
-                     row=0, column=0, sticky="w", pady=px(2))
-        self.edit_cand_sig = ttk.Combobox(
-            sig_row, values=["YES", "NO"],
-            state="readonly", width=7,
-            font=("Segoe UI", fs(8)))
-        self.edit_cand_sig.grid(row=0, column=1,
-                                sticky="w", padx=(px(4), px(14)))
-
-        tk.Label(sig_row, text="Invigilator Signed:",
-                 bg=P, fg=FG,
-                 font=("Segoe UI", fs(8), "bold")).grid(
-                     row=0, column=2, sticky="w")
-        self.edit_inv_sig = ttk.Combobox(
-            sig_row, values=["YES", "NO"],
-            state="readonly", width=7,
-            font=("Segoe UI", fs(8)))
-        self.edit_inv_sig.grid(row=0, column=3,
-                               sticky="w", padx=(px(4), 0))
-
-        # Save button
-        self.save_btn = ttk.Button(self.right_frame,
-            text="💾  Save Corrections",
-            command=self.save_corrections)
-        self.save_btn.pack(fill="x", padx=px(8), pady=px(6))
-
-        self._sep(self.right_frame)
-
-        # ── Sheet Process Status grid ──────────────────────────────────────
-        status_hdr = tk.Frame(self.right_frame, bg=P)
-        status_hdr.pack(fill="x", padx=px(8), pady=(px(4), px(1)))
+        status_hdr = tk.Frame(status_frame, bg=P)
+        status_hdr.grid(row=0, column=0, sticky="ew",
+                        padx=px(6), pady=(px(4), px(2)))
 
         tk.Label(status_hdr, text="Sheet Process Status:",
                  bg=P, fg=FG,
@@ -1251,16 +1179,15 @@ class VisualOMRViewerDemo:
             anchor="w")
         self.status_summary_lbl.pack(side="left", padx=px(6))
 
-        # Treeview + scrollbar wrapper
-        grid_frame = tk.Frame(self.right_frame, bg=P)
-        grid_frame.pack(fill="both", expand=True, padx=px(8), pady=(0, px(6)))
+        grid_frame = tk.Frame(status_frame, bg=P)
+        grid_frame.grid(row=1, column=0, sticky="nsew",
+                        padx=px(6), pady=(0, px(6)))
 
         cols = ("img", "extracted", "saved_db")
         self.status_tree = ttk.Treeview(
             grid_frame, columns=cols, show="headings",
             height=8, selectmode="browse")
 
-        # Column headings & widths
         self.status_tree.heading("img",       text="Image")
         self.status_tree.heading("extracted", text="Extracted")
         self.status_tree.heading("saved_db",  text="Saved to DB")
@@ -1268,14 +1195,12 @@ class VisualOMRViewerDemo:
         self.status_tree.column("extracted", width=px(90),  anchor="center", stretch=True)
         self.status_tree.column("saved_db",  width=px(90),  anchor="center", stretch=True)
 
-        # Row tag colours
         self.status_tree.tag_configure("ok",       background="#1b5e20", foreground="#a5d6a7")
         self.status_tree.tag_configure("warning",  background="#4e2600", foreground="#ffcc80")
         self.status_tree.tag_configure("error",    background="#4e0000", foreground="#ef9a9a")
         self.status_tree.tag_configure("imported", background="#0d2f5e", foreground="#90caf9")
         self.status_tree.tag_configure("pending",  background="#2a2a3a", foreground="#888899")
 
-        # Style the treeview to match dark theme
         self.style.configure("Treeview",
             background="#1e1e2a", foreground=self._FG,
             fieldbackground="#1e1e2a",
@@ -1294,9 +1219,131 @@ class VisualOMRViewerDemo:
         vsb.pack(side="right", fill="y")
         self.status_tree.pack(side="left", fill="both", expand=True)
 
-        # Internal lookup: filename -> treeview iid
         self._status_iids = {}
-        self._status_state = {}   # filename -> {"extracted": ..., "saved_db": ...}
+        self._status_state = {}
+        
+    def _validate_subject_code(self, event=None):
+        value = self.edit_subject.get()
+        digits = "".join(ch for ch in value if ch.isdigit())
+        digits = digits[:3]
+        if value != digits:
+            self.edit_subject.delete(0, tk.END)
+            self.edit_subject.insert(0, digits)
+
+    def build_results_panel(self):
+        """Populate the scrollable right panel with all result fields."""
+        px = self._px; fs = self._fs
+        P = self._PANEL; FG = self._FG; FGD = self._FGD
+
+        # Metadata
+        self.meta_lbl = tk.Label(self.right_frame,
+            text="File: —\nResolution: —\nType: —",
+            justify="left", anchor="w",
+            bg=P, fg=FGD, font=("Segoe UI", fs(12)))
+        self.meta_lbl.pack(fill="x", padx=px(8), pady=(px(4), px(2)))
+
+        self._sep(self.right_frame)
+
+        # Subject Code
+        self.edit_subject = self._field(
+            self.right_frame, "Subject Code", font_size=14, bold=True)
+        self.edit_subject.configure(width=3)
+        self.edit_subject.bind("<KeyRelease>", self._validate_subject_code)
+        self.edit_subject.bind("<<Paste>>", self._validate_subject_code)
+
+        # Booklet Serial No
+        self.edit_booklet = self._field(
+            self.right_frame, "Booklet Serial No  (BookletSlNo)", bold=True)
+
+        tk.Label(self.right_frame, text="OCR Confidence:",
+                 bg=P, fg=FGD, font=("Segoe UI", fs(12)),
+                 anchor="w").pack(fill="x", padx=px(8))
+        self.edit_booklet_threshold = ttk.Entry(
+            self.right_frame, font=("Consolas", fs(14)))
+        self.edit_booklet_threshold.config(state="readonly")
+        self.edit_booklet_threshold.pack(fill="x", padx=px(8), pady=(1, px(3)))
+
+        self._sep(self.right_frame)
+
+        # Barcode — inline label + entry
+        bc_row = tk.Frame(self.right_frame, bg=P)
+        bc_row.pack(fill="x", padx=px(8), pady=(px(3), px(1)))
+        tk.Label(bc_row, text="Decoded Barcode:",
+                 bg=P, fg=FG,
+                 font=("Segoe UI", fs(12), "bold")).pack(side="left")
+        self.edit_barcode = ttk.Entry(
+            bc_row, font=("Consolas", fs(14), "bold"))
+        self.edit_barcode.pack(side="right", fill="x",
+                               expand=True, padx=(px(6), 0))
+
+        self._sep(self.right_frame)
+
+        # OMR Bubble reading
+        self.edit_bubble = self._field(
+            self.right_frame, "OMR Bubble Reading",
+            font_size=12, bold=True)
+
+        # Handwritten OCR
+        self.edit_hw = self._field(
+            self.right_frame, "Handwritten OCR Reading",
+            font_size=12, bold=True)
+
+        # Resolved Register No
+        self.edit_final = self._field(
+            self.right_frame, "Resolved Register No  (SOP Output)",
+            font_size=12, bold=True)
+
+        self.edit_bubble.bind("<KeyRelease>",
+                              self.recalculate_discrepancy_and_final)
+        self.edit_hw.bind("<KeyRelease>",
+                          self.recalculate_discrepancy_and_final)
+
+        # Discrepancy banner
+        self.disc_frame = tk.Frame(self.right_frame, bg=P,
+                                   bd=1, relief="solid")
+        self.disc_frame.pack(fill="x", padx=px(8), pady=px(4))
+        self.disc_lbl = tk.Label(self.disc_frame,
+            text="DISCREPANCY STATUS: OK",
+            bg="#2e7d32", fg="#ffffff",
+            font=("Segoe UI", fs(12), "bold"), height=2)
+        self.disc_lbl.pack(fill="x")
+
+        self._sep(self.right_frame)
+
+        # Signatures — side by side on one row
+        sig_row = tk.Frame(self.right_frame, bg=P)
+        sig_row.pack(fill="x", padx=px(8), pady=px(3))
+
+        tk.Label(sig_row, text="Candidate Signed:",
+                 bg=P, fg=FG,
+                 font=("Segoe UI", fs(12), "bold")).grid(
+                     row=0, column=0, sticky="w", pady=px(2))
+        self.edit_cand_sig = ttk.Combobox(
+            sig_row, values=["YES", "NO"],
+            state="readonly", width=7,
+            font=("Segoe UI", fs(12)))
+        self.edit_cand_sig.grid(row=0, column=1,
+                                sticky="w", padx=(px(4), px(14)))
+
+        tk.Label(sig_row, text="Invigilator Signed:",
+                 bg=P, fg=FG,
+                 font=("Segoe UI", fs(12), "bold")).grid(
+                     row=0, column=2, sticky="w")
+        self.edit_inv_sig = ttk.Combobox(
+            sig_row, values=["YES", "NO"],
+            state="readonly", width=7,
+            font=("Segoe UI", fs(12)))
+        self.edit_inv_sig.grid(row=0, column=3,
+                               sticky="w", padx=(px(4), 0))
+
+        # Save button (hidden)
+        self.save_btn = ttk.Button(self.right_frame,
+            text="💾  Save Corrections",
+            command=self.save_corrections)
+        self.save_btn.pack(fill="x", padx=px(8), pady=px(6))
+        self.save_btn.pack_forget()
+
+        self._sep(self.right_frame)
 
     # ── Status grid helpers ────────────────────────────────────────────────
     def _status_icon(self, status):
@@ -1566,9 +1613,8 @@ class VisualOMRViewerDemo:
             # Convert and Display Images — sizes scale with panel layout
             sw = self.root.winfo_screenwidth()
             sh = self.root.winfo_screenheight()
-            self.display_image_in_label(
-                res["full_annotated_img"], self.full_omr_lbl,
-                max_size=self._label_max_size(self.full_omr_lbl))
+            self._full_omr_cv_img = res["full_annotated_img"]
+            self._refresh_full_omr_image()
             self.display_image_in_label(res["debug_grid_img"], self.grid_canvas_lbl,
                 max_size=(int(sw*0.34), int(sh*0.46)))
             self.display_image_in_label(res["reg_box_crop"], self.hw_crop_lbl,
@@ -1796,10 +1842,10 @@ class VisualOMRViewerDemo:
         # Combine all detected text
         text = " ".join(results)
         
-        # Extract only digits
+        # Extract only digits and keep the first three digits
         digits = ''.join(filter(str.isdigit, text))
+        digits = digits[:3]
 
-        
         return digits.strip(), crop
 
     # Booklet Serial Number Extraction — reads large printed 7-digit number below QCA label (bottom-right)
@@ -1925,6 +1971,38 @@ class VisualOMRViewerDemo:
             max(label.winfo_width() - pad, 120),
             max(label.winfo_height() - pad, 120),
         )
+
+    def adjust_original_zoom(self, delta):
+        if not hasattr(self, "full_omr_zoom"):
+            self.full_omr_zoom = 1.0
+        self.full_omr_zoom = max(0.5, min(4.0, self.full_omr_zoom + delta))
+        if hasattr(self, "full_omr_zoom_lbl"):
+            self.full_omr_zoom_lbl.config(text=f"{int(self.full_omr_zoom * 100)}%")
+        self._refresh_full_omr_image()
+
+    def _refresh_full_omr_image(self):
+        if not hasattr(self, "full_omr_img_lbl"):
+            return
+
+        cv_img = getattr(self, "_full_omr_cv_img", None)
+        if cv_img is None or cv_img.size == 0:
+            self.full_omr_img_lbl.config(image="", text="No image loaded")
+            self.full_omr_canvas_frame.configure(width=1, height=1)
+            self.full_omr_canvas.configure(scrollregion=(0, 0, 1, 1))
+            return
+
+        rgb_img = cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(rgb_img)
+        zoom = getattr(self, "full_omr_zoom", 1.0)
+        new_w = max(1, int(pil_img.width * zoom))
+        new_h = max(1, int(pil_img.height * zoom))
+
+        pil_img_resized = pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        photo = ImageTk.PhotoImage(pil_img_resized)
+        self._full_omr_photo = photo
+        self.full_omr_img_lbl.config(image=photo, text="")
+        self.full_omr_canvas_frame.configure(width=new_w + 10, height=new_h + 10)
+        self.full_omr_canvas.configure(scrollregion=(0, 0, new_w + 10, new_h + 10))
 
     def display_image_in_label(self, cv_img, tk_label, max_size=(500, 300)):
         if cv_img is None or cv_img.size == 0:
