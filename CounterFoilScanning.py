@@ -1146,29 +1146,6 @@ class VisualOMRViewerDemo:
         self.hw_crop_lbl.pack(fill="both", expand=True,
                               padx=px(3), pady=px(3))
 
-        sig_lf = tk.LabelFrame(col1,
-            text=" Signature Regions ",
-            bg=P, fg=AC,
-            font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
-        sig_lf.grid(row=3, column=0, sticky="nsew", pady=(0, px(3)))
-        sig_lf.columnconfigure(0, weight=1)
-        sig_lf.columnconfigure(1, weight=1)
-        sig_lf.rowconfigure(0, weight=1)
-
-        cand_wrap = tk.LabelFrame(sig_lf, text=" Candidate ",
-            bg=P, fg=FGD, font=("Segoe UI", fs(7)), bd=1)
-        cand_wrap.grid(row=0, column=0, sticky="nsew",
-                       padx=(px(3), px(2)), pady=px(3))
-        self.cand_sig_lbl = tk.Label(cand_wrap, bg=P)
-        self.cand_sig_lbl.pack(fill="both", expand=True)
-
-        inv_wrap = tk.LabelFrame(sig_lf, text=" Invigilator ",
-            bg=P, fg=FGD, font=("Segoe UI", fs(7)), bd=1)
-        inv_wrap.grid(row=0, column=1, sticky="nsew",
-                      padx=(px(2), px(3)), pady=px(3))
-        self.inv_sig_lbl = tk.Label(inv_wrap, bg=P)
-        self.inv_sig_lbl.pack(fill="both", expand=True)
-
         # COL 2 — Results
         col2_outer = tk.LabelFrame(content,
             text=" Extraction & Processing Results ",
