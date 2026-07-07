@@ -563,12 +563,11 @@ def determine_final_regno(bubble_regno, handwritten_regno):
     else:
         return bubble_stripped, True, f'MISMATCH: Bubble={bubble_stripped} HW={hw_stripped}'
 
-def detect_whitener_applied(img, grid_x, grid_y, tpl, scale_x, scale_y,
-                            hw_x0, hw_y0, hw_x1, hw_y1):
+def detect_whitener_applied(img, grid_x, grid_y, tpl, scale_x, scale_y):
     """
-    Detect correction-fluid (whitener) patches on the bubble grid and
-    handwritten registration regions. Whitener appears as very bright,
-    low-saturation blobs that are locally brighter than surrounding paper.
+    Detect correction-fluid (whitener) on the 70 OMR bubbles.
+    If any bubble cell contains a bright, low-saturation patch or any column
+    has a fill percent below 5%, the sheet is flagged as whitener-applied.
     """
     h, w = img.shape[:2]
     b_conf = tpl["bubble_grid"]
@@ -577,46 +576,59 @@ def detect_whitener_applied(img, grid_x, grid_y, tpl, scale_x, scale_y,
     col_spacing = b_conf["col_spacing"] * scale_x
     row_spacing = b_conf["row_spacing"] * scale_y
 
-    regions = []
-    bg_y0 = max(0, int(grid_y + row_start - 15))
-    bg_y1 = min(h, int(grid_y + row_start + 9 * row_spacing + 15))
-    bg_x0 = max(0, int(grid_x + col_start - 15))
-    bg_x1 = min(w, int(grid_x + col_start + 8 * col_spacing + 15))
-    if bg_y1 > bg_y0 and bg_x1 > bg_x0:
-        regions.append(img[bg_y0:bg_y1, bg_x0:bg_x1])
+    min_blob_area = max(80, int(40 * scale_x * scale_y))
+    bright_whitener_found = False
+    low_threshold_found = False
 
-    hy0, hy1 = max(0, hw_y0), min(h, hw_y1)
-    hx0, hx1 = max(0, hw_x0), min(w, hw_x1)
-    if hy1 > hy0 and hx1 > hx0:
-        regions.append(img[hy0:hy1, hx0:hx1])
+    for i in range(b_conf["cols"]):
+        col_vals = []
+        for j in range(b_conf["rows"]):
+            cx = int(grid_x + col_start + i * col_spacing)
+            cy = int(grid_y + row_start + j * row_spacing)
+            r = int(max(3, b_conf["sample_radius"] * scale_x))
+            y_min_idx = max(0, cy - r)
+            y_max_idx = min(h, cy + r)
+            x_min_idx = max(0, cx - r)
+            x_max_idx = min(w, cx + r)
+            cell = img[y_min_idx:y_max_idx, x_min_idx:x_max_idx]
+            if cell.size == 0:
+                continue
 
-    min_blob_area = max(60, int(40 * scale_x * scale_y))
+            hsv = cv2.cvtColor(cell, cv2.COLOR_BGR2HSV)
+            gray = cv2.cvtColor(cell, cv2.COLOR_BGR2GRAY)
+            sat = hsv[:, :, 1]
+            val = hsv[:, :, 2]
 
-    for region in regions:
-        if region.size == 0:
-            continue
-        hsv = cv2.cvtColor(region, cv2.COLOR_BGR2HSV)
-        gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
-        sat = hsv[:, :, 1]
-        val = hsv[:, :, 2]
+            local_mean = cv2.GaussianBlur(gray, (21, 21), 0)
+            whitener_mask = (
+                ((val >= 248) |
+                 (gray.astype(np.int16) > local_mean.astype(np.int16) + 12)) &
+                (sat <= 30)
+            ).astype(np.uint8) * 255
 
-        local_mean = cv2.GaussianBlur(gray, (31, 31), 0)
-        whitener_mask = (
-            (val >= 248) &
-            (sat <= 25) &
-            (gray.astype(np.int16) > local_mean.astype(np.int16) + 8)
-        ).astype(np.uint8) * 255
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            whitener_mask = cv2.morphologyEx(whitener_mask, cv2.MORPH_OPEN, kernel)
 
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        whitener_mask = cv2.morphologyEx(whitener_mask, cv2.MORPH_OPEN, kernel)
+            n_labels, _, stats, _ = cv2.connectedComponentsWithStats(
+                whitener_mask, connectivity=8)
+            for k in range(1, n_labels):
+                if stats[k, cv2.CC_STAT_AREA] >= min_blob_area:
+                    bright_whitener_found = True
+                    break
 
-        n_labels, _, stats, _ = cv2.connectedComponentsWithStats(
-            whitener_mask, connectivity=8)
-        for i in range(1, n_labels):
-            if stats[i, cv2.CC_STAT_AREA] >= min_blob_area:
-                return True
+            col_vals.append((j, np.mean(gray)))
 
-    return False
+        if len(col_vals) >= 3:
+            col_vals_sorted = sorted(col_vals, key=lambda x: x[1])
+            min_val = col_vals_sorted[0][1]
+            unmarked_vals = [x[1] for x in col_vals_sorted[2:]]
+            avg_unmarked = np.mean(unmarked_vals) if unmarked_vals else 255
+            #if avg_unmarked > 0:
+            fill_percent = 100.0 * max(0.0, (avg_unmarked - min_val) / avg_unmarked)
+            if fill_percent < 1.0:
+                low_threshold_found = True
+
+    return bright_whitener_found or low_threshold_found
 
 # ──────────────────────────────────────────────────────────
 # MAIN PROCESSING WRAPPER
@@ -780,9 +792,9 @@ def process_single_sheet_for_demo(img_path):
     subject_code, subject_crop = VisualOMRViewerDemo.extract_subject_code(None, img, scale_x, scale_y)
     booklet_sl_no, omr_threshold, booklet_crop = VisualOMRViewerDemo.extract_booklet_number(None, img, scale_x, scale_y)
 
-    # Whitener flag: True when OMR bubble threshold is below 10%, indicating
-    # correction fluid (whitener) may have been applied on the bubble region.
-    whitenerflag = omr_threshold < 10
+    # Whitener flag: detect actual bright bubble corrections on all 70 bubbles,
+    # or when any bubble column's fill percent is below 5%.
+    whitenerflag = detect_whitener_applied(img, grid_x, grid_y, tpl, scale_x, scale_y)
 
     final_regno, has_disc, disc_detail = determine_final_regno(bubble_regno, handwritten_regno)
     
@@ -1013,14 +1025,14 @@ class VisualOMRViewerDemo:
 
         self.status_lbl = ttk.Label(top, text="Ready",
             style="Pan.TLabel",
-            font=("Segoe UI", fs(9), "italic"),
+            font=("Segoe UI", fs(12), "italic"),
             foreground="#ffeb3b")
         self.status_lbl.pack(side="left", padx=px(8))
 
         self.progress = ttk.Progressbar(
             top, orient="horizontal", length=px(150), mode="determinate",
             style="Thin.Horizontal.TProgressbar")
-        self.progress.pack(side="left", padx=px(4))
+        self.progress.pack(side="left", padx=px(14))
 
         # Right side: Process All + Export buttons
         self.export_btn = ttk.Button(top, text="Export to Excel",
@@ -1353,14 +1365,16 @@ class VisualOMRViewerDemo:
             text=" Signature Regions ",
             bg=P, fg=AC,
             font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
-        sig_lf.pack(fill="x", padx=px(8), pady=px(3))
+        sig_lf.pack(fill="both", padx=px(8), pady=px(3), ipady=px(18))
         sig_lf.columnconfigure(0, weight=1)
         sig_lf.columnconfigure(1, weight=1)
+        sig_lf.rowconfigure(0, weight=1)
 
         cand_wrap = tk.LabelFrame(sig_lf, text=" Candidate ",
             bg=P, fg=FGD, font=("Segoe UI", fs(7)), bd=1)
         cand_wrap.grid(row=0, column=0, sticky="nsew",
                        padx=(px(3), px(2)), pady=px(3))
+        cand_wrap.rowconfigure(0, weight=1)
         self.cand_sig_lbl = tk.Label(cand_wrap, bg=P)
         self.cand_sig_lbl.pack(fill="both", expand=True)
 
@@ -1368,6 +1382,7 @@ class VisualOMRViewerDemo:
             bg=P, fg=FGD, font=("Segoe UI", fs(7)), bd=1)
         inv_wrap.grid(row=0, column=1, sticky="nsew",
                       padx=(px(2), px(3)), pady=px(3))
+        inv_wrap.rowconfigure(0, weight=1)
         self.inv_sig_lbl = tk.Label(inv_wrap, bg=P)
         self.inv_sig_lbl.pack(fill="both", expand=True)
 
