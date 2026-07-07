@@ -1052,9 +1052,9 @@ class VisualOMRViewerDemo:
         content = tk.Frame(self.root, bg=BG)
         content.pack(fill="both", expand=True,
                      padx=px(5), pady=px(4))
-        content.columnconfigure(0, weight=48)
+        content.columnconfigure(0, weight=51)
         content.columnconfigure(1, weight=38)
-        content.columnconfigure(2, weight=14)
+        content.columnconfigure(2, weight=11)
         content.rowconfigure(0, weight=1)
 
         # COL 0 — Original sheet
@@ -1367,21 +1367,21 @@ class VisualOMRViewerDemo:
             font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
         sig_lf.pack(fill="both", padx=px(8), pady=px(3), ipady=px(18))
         sig_lf.columnconfigure(0, weight=1)
-        sig_lf.columnconfigure(1, weight=1)
         sig_lf.rowconfigure(0, weight=1)
+        sig_lf.rowconfigure(1, weight=1)
 
         cand_wrap = tk.LabelFrame(sig_lf, text=" Candidate ",
             bg=P, fg=FGD, font=("Segoe UI", fs(7)), bd=1)
         cand_wrap.grid(row=0, column=0, sticky="nsew",
-                       padx=(px(3), px(2)), pady=px(3))
+                       padx=px(3), pady=(px(3), px(2)))
         cand_wrap.rowconfigure(0, weight=1)
         self.cand_sig_lbl = tk.Label(cand_wrap, bg=P)
         self.cand_sig_lbl.pack(fill="both", expand=True)
 
         inv_wrap = tk.LabelFrame(sig_lf, text=" Invigilator ",
             bg=P, fg=FGD, font=("Segoe UI", fs(7)), bd=1)
-        inv_wrap.grid(row=0, column=1, sticky="nsew",
-                      padx=(px(2), px(3)), pady=px(3))
+        inv_wrap.grid(row=1, column=0, sticky="nsew",
+                      padx=px(3), pady=(px(2), px(3)))
         inv_wrap.rowconfigure(0, weight=1)
         self.inv_sig_lbl = tk.Label(inv_wrap, bg=P)
         self.inv_sig_lbl.pack(fill="both", expand=True)
@@ -2029,7 +2029,7 @@ class VisualOMRViewerDemo:
     def adjust_original_zoom(self, delta):
         if not hasattr(self, "full_omr_zoom"):
             self.full_omr_zoom = 1.0
-        self.full_omr_zoom = max(0.5, min(4.0, self.full_omr_zoom + delta))
+        self.full_omr_zoom = max(0.25, min(4.0, self.full_omr_zoom + delta))
         if hasattr(self, "full_omr_zoom_lbl"):
             self.full_omr_zoom_lbl.config(text=f"{int(self.full_omr_zoom * 100)}%")
         self._refresh_full_omr_image()
