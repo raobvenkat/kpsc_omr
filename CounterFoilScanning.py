@@ -1098,16 +1098,39 @@ class VisualOMRViewerDemo:
         # COL 1 — Centre crops
         col1 = tk.Frame(content, bg=BG)
         col1.grid(row=0, column=1, sticky="nsew", padx=(0, px(4)))
-        col1.rowconfigure(0, weight=5)
-        col1.rowconfigure(1, weight=2)
+        col1.rowconfigure(0, weight=2)
+        col1.rowconfigure(1, weight=4)
         col1.rowconfigure(2, weight=2)
         col1.columnconfigure(0, weight=1)
+
+        self.crop_labelframe = tk.LabelFrame(col1,
+            text=" Subject Code / Booklet Crops ",
+            bg=P, fg=AC,
+            font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
+        self.crop_labelframe.grid(row=0, column=0,
+                                  sticky="nsew", pady=(0, px(3)))
+        self.crop_labelframe.columnconfigure(0, weight=1)
+        self.crop_labelframe.columnconfigure(1, weight=1)
+
+        subject_wrap = tk.LabelFrame(self.crop_labelframe, text=" Subject Code ",
+            bg=P, fg=FGD, font=("Segoe UI", fs(7)), bd=1)
+        subject_wrap.grid(row=0, column=0, sticky="nsew",
+                          padx=(px(3), px(2)), pady=px(3))
+        self.subject_crop_lbl = tk.Label(subject_wrap, bg=P)
+        self.subject_crop_lbl.pack(fill="both", expand=True)
+
+        booklet_wrap = tk.LabelFrame(self.crop_labelframe, text=" Booklet Serial No ",
+            bg=P, fg=FGD, font=("Segoe UI", fs(7)), bd=1)
+        booklet_wrap.grid(row=0, column=1, sticky="nsew",
+                          padx=(px(2), px(3)), pady=px(3))
+        self.booklet_crop_lbl = tk.Label(booklet_wrap, bg=P)
+        self.booklet_crop_lbl.pack(fill="both", expand=True)
 
         self.grid_labelframe = tk.LabelFrame(col1,
             text=" Bubble Grid Extraction Map ",
             bg=P, fg=AC,
             font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
-        self.grid_labelframe.grid(row=0, column=0,
+        self.grid_labelframe.grid(row=1, column=0,
                                   sticky="nsew", pady=(0, px(3)))
         self.grid_canvas_lbl = tk.Label(self.grid_labelframe, bg=P)
         self.grid_canvas_lbl.pack(fill="both", expand=True,
@@ -1117,8 +1140,8 @@ class VisualOMRViewerDemo:
             text=" Handwritten Box (MNIST) ",
             bg=P, fg=AC,
             font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
-        self.hw_labelframe.grid(row=1, column=0,
-                                sticky="nsew", pady=(0, px(3)))
+        self.hw_labelframe.grid(row=2, column=0,
+                                sticky="nsew")
         self.hw_crop_lbl = tk.Label(self.hw_labelframe, bg=P)
         self.hw_crop_lbl.pack(fill="both", expand=True,
                               padx=px(3), pady=px(3))
@@ -1127,7 +1150,7 @@ class VisualOMRViewerDemo:
             text=" Signature Regions ",
             bg=P, fg=AC,
             font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
-        sig_lf.grid(row=2, column=0, sticky="nsew")
+        sig_lf.grid(row=3, column=0, sticky="nsew", pady=(0, px(3)))
         sig_lf.columnconfigure(0, weight=1)
         sig_lf.columnconfigure(1, weight=1)
         sig_lf.rowconfigure(0, weight=1)
@@ -1244,7 +1267,7 @@ class VisualOMRViewerDemo:
     def build_results_panel(self):
         """Populate the scrollable right panel with all result fields."""
         px = self._px; fs = self._fs
-        P = self._PANEL; FG = self._FG; FGD = self._FGD
+        P = self._PANEL; AC = self._ACCENT; FG = self._FG; FGD = self._FGD
 
         # Metadata
         self.meta_lbl = tk.Label(self.right_frame,
@@ -1347,6 +1370,29 @@ class VisualOMRViewerDemo:
             font=("Segoe UI", fs(14)))
         self.edit_inv_sig.grid(row=0, column=3,
                                sticky="w", padx=(px(4), 0))
+
+        self._sep(self.right_frame)
+        sig_lf = tk.LabelFrame(self.right_frame,
+            text=" Signature Regions ",
+            bg=P, fg=AC,
+            font=("Segoe UI", fs(8), "bold"), bd=1, relief="solid")
+        sig_lf.pack(fill="x", padx=px(8), pady=px(3))
+        sig_lf.columnconfigure(0, weight=1)
+        sig_lf.columnconfigure(1, weight=1)
+
+        cand_wrap = tk.LabelFrame(sig_lf, text=" Candidate ",
+            bg=P, fg=FGD, font=("Segoe UI", fs(7)), bd=1)
+        cand_wrap.grid(row=0, column=0, sticky="nsew",
+                       padx=(px(3), px(2)), pady=px(3))
+        self.cand_sig_lbl = tk.Label(cand_wrap, bg=P)
+        self.cand_sig_lbl.pack(fill="both", expand=True)
+
+        inv_wrap = tk.LabelFrame(sig_lf, text=" Invigilator ",
+            bg=P, fg=FGD, font=("Segoe UI", fs(7)), bd=1)
+        inv_wrap.grid(row=0, column=1, sticky="nsew",
+                      padx=(px(2), px(3)), pady=px(3))
+        self.inv_sig_lbl = tk.Label(inv_wrap, bg=P)
+        self.inv_sig_lbl.pack(fill="both", expand=True)
 
         # Save button (hidden)
         self.save_btn = ttk.Button(self.right_frame,
@@ -1627,14 +1673,18 @@ class VisualOMRViewerDemo:
             sh = self.root.winfo_screenheight()
             self._full_omr_cv_img = res["full_annotated_img"]
             self._refresh_full_omr_image()
+            self.display_image_in_label(res["subject_crop"], self.subject_crop_lbl,
+                max_size=(int(sw*0.16), int(sh*0.12)))
+            self.display_image_in_label(res["booklet_crop"], self.booklet_crop_lbl,
+                max_size=(int(sw*0.16), int(sh*0.12)))
             self.display_image_in_label(res["debug_grid_img"], self.grid_canvas_lbl,
-                max_size=(int(sw*0.34), int(sh*0.46)))
+                max_size=(int(sw*0.34), int(sh*0.34)))
             self.display_image_in_label(res["reg_box_crop"], self.hw_crop_lbl,
                 max_size=(int(sw*0.34), int(sh*0.08)))
             self.display_image_in_label(res["cand_sig_crop"], self.cand_sig_lbl,
-                max_size=(int(sw*0.16), int(sh*0.10)))
+                max_size=(int(sw*0.16), int(sh*0.14)))
             self.display_image_in_label(res["inv_sig_crop"], self.inv_sig_lbl,
-                max_size=(int(sw*0.16), int(sh*0.10)))
+                max_size=(int(sw*0.16), int(sh*0.14)))
             
             self.status_lbl.config(text="Sheet loaded successfully", foreground="#00e676")
             audit.log("counter_foil", "sheet_processed", details={"file": filename})
