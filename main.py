@@ -13,6 +13,7 @@ import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
+from AllDiscrepancyGeneration import AllDiscrepancyGeneration
 
 try:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -926,7 +927,7 @@ class MainApplication:
             panel_body,
             "DOWNLOAD REPORTS",
             "download_reports_var",
-            ["Audit Export", "Discrepancy Reports"],
+            ["Audit Export", "Discrepancy Reports","All Discrepancy Generation"],
             self._on_download_report_selected,
         )
 
@@ -960,7 +961,18 @@ class MainApplication:
 
         self.root.bind("<Configure>", self._layout_cards, add="+")
         self.root.after_idle(self._layout_cards)
+    def open_all_discrepancy_generation(self):
 
+        if self.current_user is None:
+            if not self._show_login():
+                return
+
+        win = tk.Toplevel(self.root)
+
+        AllDiscrepancyGeneration(
+            win,
+            self.current_user.user_id
+        )
     def _open_disc_report(self, report_id: int) -> None:
         """Open the DiscrepancyReports window pre-selected on the given report."""
         try:
@@ -1108,6 +1120,10 @@ class MainApplication:
                 audit.log("application", "module_close", details={"module": "DiscrepancyReports"})
                 win.destroy()
             win.protocol("WM_DELETE_WINDOW", _on_close)
+            return
+        
+        if selection == "All Discrepancy Generation":
+            self.open_all_discrepancy_generation()
             return
 
     def _refresh_db_status(self) -> None:

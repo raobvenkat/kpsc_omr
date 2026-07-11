@@ -1,0 +1,77 @@
+In the attached file :
+Find the OMR block any bubble threshold is less than 35% then the bubble_Th_status is 1 else 0
+This needto save in the table in field "bubble_Th_status"
+Steps to follow:
+1. In a column there are 10 bubbles and 7 columns so there are 10X7 70 bobules
+2. The system should check each bubble threshold 
+3. if any bubble threshold is less than 35% then the bubble_Th_status is 1 else 0
+
+Kindly do the changes and give the alter table statement.
+
+1. Move the Sheet process Status grid below the Original Scanned Sheet panel
+2. Hide the Save Corrections Button.
+3. Add both horigental and vertical scroll bars to the original Scanned Sheet panel
+4. Give zoom option to the Original scanned Sheet image.
+
+Make Extraction & processing Result panel containing all the Fields little bigger font and it should not be scrollable 
+make Subject Code,Booklet Serial No, OCR Confidence,Decoded Barcode, OMR Bubble Reading, Handwritten OCR Reading, Register No (SOP output), Candidate Signed, Invigilator Signed these all fields make bigger Font 
+Select Folder, Process All, Export to Excel buttons height to increase and the font should be 14px
+
+1. OMR Bubble Reading text box font should be 14px
+2. Handwritten OCR Reading text box font should be 14px, 
+3. Register No (SOP output) text box font should be 14px, 
+4. Candidate Signed dropdown box font should be 14px, 
+5. Invigilator Signed dropdown box font should be 14px
+6. Also corresponding lables font size should match
+7. Decoded Barcode text box font should be 14px and corresponding lable also
+
+1. The Bubble Grid Extraction Map Panel above add Subject Code and Booklet Serial No Croped images with corresponding lables
+2. Only reduce the height of Bubble Grid Extraction Map Panel don't change Width of the panel
+3. Increase the Height of Candidate Signature & Invigilator Signature croped Images with out changing Corresponding Panel height.
+move the Signature Regions panel to right side Panel below Candidate Signed dropdown box and invigilator Signed dropdown box
+inside Signature Regions panel the panels Candidate and Invigilator height increase
+inside Signature Regions panel the panels Candidate's signature image and Invigilator's signature image height increase
+
+1. Inside Signature Regions panel,make the changes like Candidate panel below that Invigilator panel
+2. Reduce the width of Extraction & processing Result panel by 25%
+3. That space allocate to Original Scanned Sheet panel
+
+
+1. There is no way any relation between bubble_Th_status field and whitenerflag field.
+2. At present all the sheets are flaged as  whitenerflag =1 it is not true.
+3. If any bubble marked and to erease the mark whitener has applied as given in the attached images marked in red rectangle box.
+4. Very rarely sheets will be whitenerwill be applied on a bubble by the candidate.
+5. There are 10 rows and 7 columns a total of 70 bubbles the code has to check all the 70 bubbles if any one bubble is too bright then the whitenerflag is 1 else 0 or Complete bubble threshold is <5% than whitenerflag is 1 else 0
+6. refer the two images the red rectangular box bubbles are whitener marked one.
+
+6. Any bubble applied with whitner than the corresponding number written with in the ovel of OMR will not visible completely or partially.
+6. If whitener applied then there is a patch on the bubble. Any such situation detected by the system then only the whitenerflag flag should be 1 else the sheet is fine and it should be 0.
+7. A good way to detect whitener (correction fluid) on OMR bubbles is to look for regions that are:
+	a. Very bright (white)
+	b. Low saturation
+	c. Larger than the normal paper texture
+	d. Present inside or around a bubble which should normally contain only paper and pencil marks
+8. The whitenerflag field is already exists it has to correct the code.
+
+--------------------------------
+
+The Screen Name should All discrepancy generation and export
+1. Should have header like "All Discrepancy Generation & Export" for the screen in a panel.
+2. on top of left and below the header one dropdown box should be there with lable "Discrepancy for" which contain 2 options
+	a. Counter Foil
+	b. Nominal Roll 1 (Discritive Test)
+	c. Nominal Roll 2 (OMR Test)
+  complete 2nd point should be in a panel with out name.
+3. Side to the dropdown box one button should be there with lable "Generate".
+4. On click of Generate it should call the SQL DB procedure "USP_GenerateDiscrepancy" and displays the output of Stored Procedure in a data grid.
+5. Below the Discrepancy for panel one panel with out any label cantains a dynamic data grid should be there.
+6. Below this two button should be there with lable  "Export to excel", "Close" in a panel with out label
+generate the python code for the page
+
+1. On click of close button the screen should close.
+2. Show full class code with these changes in .py file
+3. How to pass user_id from main.py
+4. How to call this screen from main.py
+ 
+
+Discrepancy for dropdown box value has to pass for the first parameter "@DiscrFor" of SQL DB procedure "USP_GenerateDiscrepancy" and second parameter "@UserID" the user_id has to pass
