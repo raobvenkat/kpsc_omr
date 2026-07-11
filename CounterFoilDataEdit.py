@@ -1,12 +1,14 @@
 import os
 import tkinter as tk
 from tkinter import ttk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageOps
 import db_credentials
 
 
 class CounterFoilDataEdit:
     PAGE_SIZE = 50
+    # Horizontal offset (pixels) for the status label inside the image panel
+    STATUS_LABEL_LEFT_OFFSET = 110
 
     def __init__(self, root, user_id):
         self.root = root
@@ -25,6 +27,7 @@ class CounterFoilDataEdit:
         self.current_image = None
         self.current_photo = None
         self.zoom_factor = 1.0
+        self.crop_zoom_factor = 0.25
 
         self.message_var = tk.StringVar()
         self.edit_for_var = tk.StringVar()
@@ -34,6 +37,7 @@ class CounterFoilDataEdit:
         self.filename_var = tk.StringVar()
         self.goto_row_var = tk.StringVar()
         self.edit_entry_widgets = {}
+        self.current_focus_field = None
 
         self.create_controls()
         self.load_editfor_values()
@@ -272,13 +276,40 @@ class CounterFoilDataEdit:
         frame.grid_columnconfigure(0, weight=1)
         frame.grid_columnconfigure(1, weight=1)
 
-        self.lbl_id = ttk.Label(frame, text='ID :', font=('Segoe UI', 14))
-        self.lbl_id.grid(row=0, column=0, sticky='w', padx=5, pady=5, columnspan=2)
-
         left_frame = ttk.Frame(frame)
         left_frame.grid(row=1, column=0, sticky='nsew', padx=(5, 10), pady=5)
+
+        # Move ID label into the left frame so it stays with the left-side controls
+        self.lbl_id = ttk.Label(left_frame, text='ID :', font=('Segoe UI', 14))
+        self.lbl_id.grid(row=0, column=0, sticky='w', padx=5, pady=5, columnspan=2)
+
+        # Left frame now holds the ID label at row 0; fields start at row 1
+        
         right_frame = ttk.Frame(frame)
         right_frame.grid(row=1, column=1, sticky='nsew', padx=(10, 5), pady=5)
+
+        self.crop_frame = ttk.LabelFrame(right_frame, text='Focus Crop')
+        self.crop_frame.grid(row=0, column=0, columnspan=2, sticky='ew', padx=5, pady=(0, 2))
+
+        crop_toolbar = tk.Frame(self.crop_frame)
+        crop_toolbar.pack(fill='x', padx=4, pady=(4, 0))
+        ttk.Button(crop_toolbar, text='+', width=3, command=self.crop_zoom_in).pack(side='left', padx=(0, 2))
+        ttk.Button(crop_toolbar, text='-', width=3, command=self.crop_zoom_out).pack(side='left')
+
+        crop_container = tk.Frame(self.crop_frame)
+        crop_container.pack(fill='both', expand=True, padx=4, pady=4)
+        crop_container.grid_rowconfigure(0, weight=1)
+        crop_container.grid_columnconfigure(0, weight=1)
+
+        self.crop_canvas = tk.Canvas(crop_container, width=140, height=90, bg='white', highlightthickness=1)
+        self.crop_canvas.grid(row=0, column=0, sticky='nsew')
+
+        crop_hscroll = ttk.Scrollbar(crop_container, orient='horizontal', command=self.crop_canvas.xview)
+        crop_hscroll.grid(row=1, column=0, sticky='ew')
+        crop_vscroll = ttk.Scrollbar(crop_container, orient='vertical', command=self.crop_canvas.yview)
+        crop_vscroll.grid(row=0, column=1, sticky='ns')
+        self.crop_canvas.configure(xscrollcommand=crop_hscroll.set, yscrollcommand=crop_vscroll.set)
+        self.crop_canvas.bind('<MouseWheel>', self.crop_mouse_zoom)
 
         fields = [
             ('Subject Code', 'subject_code_var'),
@@ -289,26 +320,145 @@ class CounterFoilDataEdit:
         ]
 
         self.editor_vars = {}
-        for r, (lbl, varname) in enumerate(fields, start=0):
+        for r, (lbl, varname) in enumerate(fields, start=1):
             ttk.Label(left_frame, text=lbl, font=('Segoe UI', 14)).grid(row=r, column=0, sticky='w', padx=5, pady=4)
             v = tk.StringVar()
             self.editor_vars[varname] = v
             entry = ttk.Entry(left_frame, textvariable=v, width=18, font=('Segoe UI', 13))
             entry.grid(row=r, column=1, padx=5, pady=4)
+            entry.bind('<FocusIn>', lambda event, field=varname: self.on_focus_crop(field))
             self.edit_entry_widgets[varname] = entry
 
         yn = ['Yes', 'No']
+        right_frame.grid_columnconfigure(0, weight=1)
+        right_frame.grid_columnconfigure(1, weight=1)
         for r, (lbl, varname) in enumerate([
             ('Candidate Signature', 'candsig'),
             ('Invigilator Signature', 'invsig'),
             ('Whitener Applied', 'whitener'),
-            ('Non Standard Sheet', 'nonstd'),
-            ('Threshold < 35%', 'threshold')
+            ('Non Standard Sheet', 'nonstd')
         ], start=0):
-            ttk.Label(right_frame, text=lbl, font=('Segoe UI', 14)).grid(row=r, column=0, sticky='w', padx=5, pady=4)
+            ttk.Label(right_frame, text=lbl, font=('Segoe UI', 14)).grid(row=r+1, column=0, sticky='w', padx=5, pady=4)
             v = tk.StringVar()
             self.editor_vars[varname] = v
-            ttk.Combobox(right_frame, textvariable=v, values=yn, state='readonly', width=5, font=('Segoe UI', 13)).grid(row=r, column=1, padx=5, pady=4)
+            combo = ttk.Combobox(right_frame, textvariable=v, values=yn, state='readonly', width=5, font=('Segoe UI', 13))
+            combo.grid(row=r+1, column=1, padx=5, pady=4)
+            combo.bind('<FocusIn>', lambda event, field=varname: self.on_focus_crop(field))
+
+        # Move Threshold dropdown to the left frame below the handwritten field
+        try:
+            thr_row = len(fields) + 1
+        except Exception:
+            thr_row = 6
+        ttk.Label(left_frame, text='Threshold < 35%', font=('Segoe UI', 14)).grid(row=thr_row, column=0, sticky='w', padx=5, pady=4)
+        v = tk.StringVar()
+        self.editor_vars['threshold'] = v
+        thr_combo = ttk.Combobox(left_frame, textvariable=v, values=yn, state='readonly', width=5, font=('Segoe UI', 13))
+        thr_combo.grid(row=thr_row, column=1, padx=5, pady=4)
+        thr_combo.bind('<FocusIn>', lambda event, field='threshold': self.on_focus_crop(field))
+
+    def on_focus_crop(self, field_name):
+        self.current_focus_field = field_name
+        self.show_focus_crop(field_name)
+
+    def show_focus_crop(self, field_name):
+        if self.current_image is None:
+            return
+        crop_image = self.get_focus_crop_image(field_name)
+        self.display_focus_crop(crop_image)
+
+    def get_focus_crop_image(self, field_name):
+        if self.current_image is None:
+            return None
+
+        img = self.current_image.convert('RGB')
+        w, h = img.size
+        target_w = 1654
+        target_h = 1080
+        scale_x = w / target_w if target_w else 1.0
+        scale_y = h / target_h if target_h else 1.0
+
+        try:
+            if field_name == 'subject_code_var':
+                x1 = int(140 * scale_x)
+                x2 = int(500 * scale_x)
+                y1 = int(20 * scale_y)
+                y2 = int(140 * scale_y)
+            elif field_name == 'booklet_var':
+               #x1 = int(w * 0.556) x2 = int(w * 0.949) y1 = int(h * 0.725)     y2 = int(h * 0.800
+                
+                x1 = int(w * 0.62)
+                x2 = int(w * 0.95)
+                y1 = int(h * 0.68)
+                y2 = int(h * 0.78)
+            elif field_name == 'barcode_var':
+                x1 = int(w * 0.55)
+                x2 = w
+                y1 = int(h * 0.03)
+                y2 = int(h * 0.18)
+            elif field_name == 'bubble_var':
+                # Bubble RegNo area is intentionally not shown as a focus crop
+                # (too large / not useful). Return None to indicate no crop.
+                #return None
+                x1 = int(w * 0.55)
+                x2 = w
+                y1 = int(h * 0.30)
+                y2 = int(h * 0.64)
+
+            elif field_name == 'hand_var':
+                # Crop for handwritten Register No (matches orange rectangle in 123.png)
+                # Positioned top-right under the barcode area
+                x1 = int(w * 0.55)
+                x2 = w
+                y1 = int(h * 0.30)
+                y2 = int(h * 0.40)
+            elif field_name == 'candsig':
+                # Use the same area previously used for bubble_var so the
+                # Candidate Signature focus shows that region instead.
+                x1 = int(w * 0.04)
+                x2 = int(w * 0.58)
+                #y1 = int(h * 0.24)
+                y1 = int(h * 0.34)
+                y2 = int(h * 0.45)
+            elif field_name == 'invsig':
+                #x1 = int(130 * scale_x)
+                #x2 = int(900 * scale_x)
+                #y1 = int(152 * scale_y)
+                #y2 = int(252 * scale_y)
+                x1 = int(w * 0.04)
+                x2 = int(w * 0.58)
+                y1 = int(h * 0.50)
+                y2 = int(h * 0.60)
+            else:
+                return None
+
+            x1 = max(0, min(w, x1))
+            y1 = max(0, min(h, y1))
+            x2 = max(x1 + 1, min(w, x2))
+            y2 = max(y1 + 1, min(h, y2))
+            return img.crop((x1, y1, x2, y2))
+        except Exception:
+            return None
+
+    def display_focus_crop(self, crop_image):
+        self.crop_canvas.delete('all')
+        if crop_image is None:
+            self.crop_canvas.create_text(10, 10, anchor='nw', text='No crop available', fill='gray')
+            return
+
+        try:
+            # Zoom the crop using the current crop zoom factor between 100% and 600%.
+            img_rgb = crop_image.convert('RGB')
+            zoom_ratio = max(0.25, min(6.0, self.crop_zoom_factor))
+            zw = max(1, int(img_rgb.width * zoom_ratio))
+            zh = max(1, int(img_rgb.height * zoom_ratio))
+            zoomed = img_rgb.resize((zw, zh), Image.LANCZOS)
+
+            self.current_crop_photo = ImageTk.PhotoImage(zoomed)
+            self.crop_canvas.create_image(0, 0, anchor='nw', image=self.current_crop_photo)
+            self.crop_canvas.configure(scrollregion=self.crop_canvas.bbox('all'))
+        except Exception:
+            self.crop_canvas.create_text(10, 10, anchor='nw', text='Unable to display crop', fill='gray')
 
     def create_button_panel(self, parent):
         frm = tk.Frame(parent)
@@ -326,7 +476,7 @@ class CounterFoilDataEdit:
         ttk.Button(button_row, text='Reset', command=self.reset_controls, width=12).pack(side='left', padx=2)
         ttk.Button(button_row, text='Close', command=self.root.destroy, width=12).pack(side='right', padx=2)
 
-        ttk.Label(frm, textvariable=self.message_var, anchor='w', font=('Segoe UI', 14)).pack(fill='x', padx=10, pady=(4, 0))
+        # Status label moved to image panel (below full image)
 
     def create_image_panel(self, parent):
         toolbar = tk.Frame(parent)
@@ -344,6 +494,24 @@ class CounterFoilDataEdit:
         vscroll.pack(side='right', fill='y')
         self.canvas.bind('<MouseWheel>', self.mouse_zoom)
 
+        # Status message shown below the full image area.
+        # Use a container so we can left-offset the label to align with
+        # the "To be filled by" region in the scanned form. Adjust
+        # `STATUS_LABEL_LEFT_OFFSET` above to fine-tune positioning.
+        status_container = tk.Frame(parent)
+        status_container.pack(fill='x')
+
+        self.status_label = ttk.Label(
+            status_container,
+            textvariable=self.message_var,
+            anchor='w',
+            font=('Segoe UI', 14),
+            wraplength=600,
+            justify='left'
+        )
+        left_pad = self.STATUS_LABEL_LEFT_OFFSET
+        self.status_label.pack(fill='x', padx=(left_pad, 10), pady=(4, 0))
+
     def load_editfor_values(self):
         try:
             conn = db_credentials.get_sql_connection()
@@ -358,7 +526,10 @@ class CounterFoilDataEdit:
         try:
             conn = db_credentials.get_sql_connection()
             cursor = conn.cursor()
-            cursor.execute('EXEC usp_LoadCounterfoilEditGrid @EditFor=?, @UserID=?', (self.edit_for_var.get(), self.user_id))
+            cursor.execute(
+                'EXEC usp_LoadCounterfoilEditGrid @EditFor=?, @UserID=?, @FromID=?, @ToID=?',
+                (self.edit_for_var.get(), self.user_id, self.from_sheet_var.get(), self.to_sheet_var.get())
+            )
             self.columns = [c[0] for c in cursor.description]
             self.rows = cursor.fetchall()
             cursor.close()
@@ -547,6 +718,8 @@ class CounterFoilDataEdit:
 
         self.current_image = Image.open(image_path)
         self.display_image()
+        if self.current_focus_field:
+            self.show_focus_crop(self.current_focus_field)
 
     def display_image(self):
         if self.current_image is None:
@@ -567,11 +740,27 @@ class CounterFoilDataEdit:
         self.zoom_factor /= 1.2
         self.display_image()
 
+    def crop_zoom_in(self):
+        self.crop_zoom_factor = min(6.0, self.crop_zoom_factor * 1.2)
+        if self.current_focus_field:
+            self.show_focus_crop(self.current_focus_field)
+
+    def crop_zoom_out(self):
+        self.crop_zoom_factor = max(0.25, self.crop_zoom_factor / 1.2)
+        if self.current_focus_field:
+            self.show_focus_crop(self.current_focus_field)
+
     def mouse_zoom(self, event):
         if event.delta > 0:
             self.zoom_in()
         else:
             self.zoom_out()
+
+    def crop_mouse_zoom(self, event):
+        if event.delta > 0:
+            self.crop_zoom_in()
+        else:
+            self.crop_zoom_out()
 
     def log_error(self, screen, module, error_text):
         try:
