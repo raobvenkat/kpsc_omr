@@ -25,3 +25,5 @@ pyinstaller==6.21.0
 
 #PDF Export report
 PyPDF2 
+
+reportlab

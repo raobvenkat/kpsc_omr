@@ -85,9 +85,20 @@ else:
         raise OSError("Secure credential storage is supported on Windows only.")
 
 
+#def get_config_dir() -> str:
+#    appdata = os.environ.get("APPDATA") or os.path.expanduser("~")
+#    return os.path.join(appdata, "KPSC_OMR")
+
 def get_config_dir() -> str:
-    appdata = os.environ.get("APPDATA") or os.path.expanduser("~")
-    return os.path.join(appdata, "KPSC_OMR")
+
+    try:
+        app_dir = os.path.dirname(
+            os.path.abspath(__file__)
+        )
+    except Exception:
+        app_dir = os.getcwd()
+
+    return app_dir
 
 
 def get_config_path() -> str:

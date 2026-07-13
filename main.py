@@ -904,20 +904,12 @@ class MainApplication:
         # ── ROW 2: Discrepancies ─────────────────────────────────
         self._disc_combo, self._disc_open_btn = _combo_row(
             panel_body,
-            "DISCREPANCIES",
+            "Edit Extracted Data",
             "discrepancy_var",
             [
-                "Subject Code & Booklet Serial No Discrepancy",
-                "Barcode Discrepancy",
-                "Written RegNo Discrepancy",
-                "OMR RegNo Discrepancy",
-                "Whiter Used in the boubles",
-                "Boubles marked <35% Threshold marking",
-                "Candidate's Signature Discrepancy",
-                "Invigilator's Signature Discrepancy",
-                "Non standard OMR sheet used",
-                "Not signed by candidate in Nominal Rolll Discrepancy",
-                "Not signed by Invigilator in Nominal Rolll Discrepancy",
+                "Counter Foil Data Edit",
+                "Nominal Roll 1 Data Edit",
+                "Nominal Roll 2 Data Edit"
             ],
             self._on_discrepancy_selected,
         )
@@ -1454,14 +1446,20 @@ class MainApplication:
             "Attendance Sheet Extraction",
         )
 
-    def open_subject_booklet_discrepancy(self) -> None:
-        from CounterFoilSubBSNoEdit import SubjectBookletDiscrepancy
+    def CounterFoilDataEdit(self) -> None:
+        from CounterFoilDataEdit import CounterFoilDataEdit
 
         self._open_module(
-            SubjectBookletDiscrepancy,
-            "Subject Code & QCA Booklet Serial No Discrepancy",
+            CounterFoilDataEdit,
+            "Counter Foil Data Edit",
         )
+    def NominalRoll1DataEdit(self) -> None:
+        from NominalRoll1DataEdit import NominalRoll1DataEdit
 
+        self._open_module(
+            NominalRoll1DataEdit,
+            "Nominal Roll 1 (Descriptive Test) Data Edit",
+        )
     def open_pending_discrepancy(self, title: str) -> None:
         # Add future discrepancy module imports here, for example:
         # from MyDiscrepancyFile import MyDiscrepancyClass
