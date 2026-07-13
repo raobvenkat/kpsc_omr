@@ -1,13 +1,7 @@
 import tkinter as tk
 from tkinter import ttk,messagebox
-import pyodbc
 from datetime import datetime
-
-SERVER='3.109.160.126'
-DATABASE='KPSCOMRICRExtraction'
-USERNAME='KPSCDev'
-PASSWORD='kpscD5v'
-CONN=f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={SERVER};DATABASE={DATABASE};UID={USERNAME};PWD={PASSWORD};TrustServerCertificate=yes"
+import db_credentials
 
 class ToolTip:
     def __init__(self,w,t):
@@ -52,7 +46,7 @@ class App:
         self.audit=tk.Text(r,height=5); self.audit.pack(fill='x',padx=10,pady=5)
         self.load_groups(); self.build_grid()
 
-    def conn(self): return pyodbc.connect(CONN)
+    def conn(self): return db_credentials.get_sql_connection()
     def log(self,m): self.audit.insert('end',f'{datetime.now()} - {m}\n')
 
     def load_groups(self):

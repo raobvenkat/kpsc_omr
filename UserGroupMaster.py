@@ -1,14 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime
-import pyodbc
-
-SERVER='3.109.160.126'
-DATABASE='KPSCOMRICRExtraction'
-USERNAME='KPSCDev'
-PASSWORD='kpscD5v'
-
-CONN_STR=(f"DRIVER={{{'ODBC Driver 17 for SQL Server'}}};SERVER={SERVER};DATABASE={DATABASE};UID={USERNAME};PWD={PASSWORD};TrustServerCertificate=yes;")
+import db_credentials
 
 class UserGroupMaster:
     def __init__(self, root):
@@ -20,7 +13,7 @@ class UserGroupMaster:
         self.clear_fields()
 
     def get_connection(self):
-        return pyodbc.connect(CONN_STR)
+        return db_credentials.get_sql_connection()
 
     def get_next_groupid(self):
         con=self.get_connection(); cur=con.cursor()
