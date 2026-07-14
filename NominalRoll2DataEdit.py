@@ -908,16 +908,16 @@ class NominalRoll2DataEdit:
         )
 
         self.editor_vars['omr_var'].set(
-            str(self._get_row_value(vals, 'OMR_No', 'OMRNo'))
+            str(self._get_row_value(vals, 'OMR_No', 'OMRNo','QCAB_Serial_No'))
         )
 
         self.editor_vars['regno_var'].set(
             str(self._get_row_value(vals, 'Registration_No', 'RegNo', 'RegistrationNo'))
         )
 
-        self.editor_vars['qpvc_var'].set(
-            str(self._get_row_value(vals, 'QPVC', 'QPVCNo'))
-        )
+        #self.editor_vars['qpvc_var'].set(
+        #    str(self._get_row_value(vals, 'QPVC', 'QPVCNo'))
+        #)
 
         def yn(v):
             return "Yes" if str(v) in (
@@ -1102,9 +1102,9 @@ class NominalRoll2DataEdit:
                         'regno_var'
                     ].get(),
 
-                    self.editor_vars[
-                        'qpvc_var'
-                    ].get(),
+                    #self.editor_vars[
+                    #   'qpvc_var'
+                    #].get(),
 
                     self.yes_no_to_bit(
                         self.editor_vars[
