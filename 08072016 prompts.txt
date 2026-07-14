@@ -75,3 +75,597 @@ generate the python code for the page
  
 
 Discrepancy for dropdown box value has to pass for the first parameter "@DiscrFor" of SQL DB procedure "USP_GenerateDiscrepancy" and second parameter "@UserID" the user_id has to pass
+
+1. Side to "Export to excel" button add "Export to PDF"
+2. on click of the button PDF File has to generate with password KPSC Followed DATE in ddmmyy format 
+
+
+Counter Foil Edit Screen
+
+1. From the Attached main.py take the SQL Database Connection2.
+2. Capture the User ID from main.py.
+3. Add header for the screen as "Counter Foil Data Edit"
+4. Add a panel "Filter" with has to contain following controls 
+	a. Edit_For Dropdown box with left side label "Edit For: and The list values should be output of stroed procedure usp_CounterFoilEditFor.
+	b. After dropdown box add FromSheetNo textbox with label "From Sheet No" which can accommodate max 7 digits
+	c. After FromSheetNo text box add ToSheetNo textbox with label "To Sheet No" which can accommodate max 7 digits
+	d. Next to FromSheetNo text box LoadData button should be there.
+	d. In the next row add ID textbox with label "SheetNo" which can accommodate max 7 digits
+	e. Right to ID text box add FileName text box with label "File Name" which can accommodate 200 characters
+	f. Right to FileName text box and allign to LoadData button add Filter button.
+	g. Below the "Filter" Panel add "Data Grid" Panel. 
+	h. Below the "Data Grid" Panel add "Edit" Panel below to this add Button Panel.
+	h. Right to "Filter","Data Grid" & "Edit" Panels "Full Image" Panel should be there.
+	i. The "Data Grid" Panel contains a Data Grid bolow to data grid control buttons for data grid like First,Previous, Next, Last, Go to Row No with textbox and the data grid Paging controls one page contains 50 records. The data grid can have both horizental & vertical Scrolling option.
+	j. On click of LoadData button execute Stored procedure "usp_LoadCounterfoilEditGrid" with parameters @EditFor, @UserID the parametre values should be The Edit_For Dropdown box selected value and User ID,. the output display in in the Datagrid with following fields 
+	   "SlNo, ID, [filename], [barcode], [bubble_regno], [handwritten_regno], [subject_code], [BookletSlNo], CandSigDesc, InvSignDesc, WhitenerDesc [WhitenerApplied], isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%]"
+  	k. On click of the grid row the data ID, Subject_code,BookletSlNo, [barcode], [bubble_regno], [handwritten_regno],CandSigDesc, InvSignDesc,[WhitenerApplied], [Non Standard Sheet],ThDesc [Threshold < 35%] has to display in text boxes with Respective lables the ID has to display in a lable with side header "ID"
+	l. The Button Panel contains Skip, Update, Reset, Close Buttons should be there.
+	m. The Skip  bubbon onclick call usp_CounterFoilEditSkip stored procedure with parameters @EditFor, @UserID the parametre values should be The Edit_For Dropdown box selected value and User ID 
+	n. The Reset button onclick should clear the All control in the Edit panel to blank.
+	o. The close button onclick Should close the screen.
+	p. The Update button onclick call usp_CounterFoilEditUpdate stored procedure with parameters @EditFor, @UserID the parametre values should be The Edit_For Dropdown box selected value and User ID 
+	q. The full image display in the "Full Image" Panel, the [filename] field contains the Full image file path. it should be have both horizental & vertical Scrolling option with zooming option.
+	r. CandSigDesc, InvSignDesc,[WhitenerApplied], [Non Standard Sheet], [Threshold < 35%] fields are Yes / No dropdown boxes if the field falue is 1 the Yes else No. all other fields are textboxs
+5. All messages and error messages should display in the message lable.
+6. All errors has to loged in ErrorLog table "ErrorLog" with fields [ErrorScreen],[ErrorModule],[ErrorText],[ErrorTime]
+
+Create Procedure usp_LoadCounterfoilEditGrid 
+	@EditFor varchar (200), @UserID int
+As
+Begin
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], [barcode], [bubble_regno], [handwritten_regno],
+			 [subject_code], [BookletSlNo], BarcodeDesc, OMRRegNoDesc, ICRRegNoDesc, CandSigDesc, 
+			InvSignDesc, SubCodeDesc, BSlNoDesc,  WhitenerDesc WhitenerApplied, isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%], FinalDesc FinalStatus from CounterFoilData where FinalDesc =1
+			
+End
+
+go
+
+Create Procedure usp_CounterFoilEditSkip @EditFor, @UserID,@ID
+As
+Begin
+	insert into [dbo].[CounterFoilDataEditLog] select * from CounterFoilData where ID = @ID;
+	update CounterFoilData set EditSkip =1,[EditFor]= @EditFor,[EditUserID]= @UserID,[EditedOn]=getdate() where id = @ID;
+end
+
+Confirm if WhitenerDesc maps to WhitenerApplied
+
+
+1. column does usp_CounterFoilEditFor return are 
+	create procedure usp_CounterFoilEditFor
+	As
+	Begin
+		Select ReportName EditFor from [dbo].[ExportReport] where ReportFor = 'Counter Foil' and id <10
+		union
+		Select 'Full Data' EditFor
+	End
+2. ID column always unique and non-null
+3. Values are expected for EditFor 
+	Barcode discrepancy
+	Boubles marked <35% Threshold marking
+	Candidate's Signature discrepancy
+	Invigilator's Signature discrepancy
+	Non standard OMR sheet used
+	OMR RegNo discrepancy
+	Subject Code & Booklet Serial No discrepancy
+	Whiter Used in the boubles
+	Written RegNo discrepancy
+	Full Data
+-------------------------------------------------
+1. Provide table structure for CounterFoilData
+
+/****** Object:  Table [dbo].[CounterFoilData]    Script Date: 09/07/2026 03:44 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[CounterFoilData](
+	[id] [int] NOT NULL,
+	[filename] [nvarchar](500) NOT NULL,
+	[barcode] [nvarchar](100) NULL,
+	[bubble_regno] [nvarchar](50) NULL,
+	[handwritten_regno] [nvarchar](50) NULL,
+	[final_regno] [nvarchar](50) NULL,
+	[discrepancy] [bit] NULL,
+	[discrepancy_detail] [nvarchar](max) NULL,
+	[candidate_signed] [nvarchar](10) NULL,
+	[invigilator_signed] [nvarchar](10) NULL,
+	[subject_code] [nvarchar](100) NULL,
+	[BookletSlNo] [nvarchar](100) NULL,
+	[created_at] [datetime2](0) NULL,
+	[omr_threshold] [varchar](10) NULL,
+	[whitenerflag] [bit] NOT NULL,
+	[isblack] [bit] NOT NULL,
+	[updated_at] [datetime2](0) NULL,
+	[updated_by] [int] NULL,
+	[bubble_Th_status] [bit] NOT NULL,
+	[BarcodeDesc] [bit] NULL,
+	[OMRRegNoDesc] [bit] NULL,
+	[ICRRegNoDesc] [bit] NULL,
+	[CandSigDesc] [bit] NULL,
+	[InvSignDesc] [bit] NULL,
+	[SubCodeDesc] [bit] NULL,
+	[BSlNoDesc] [bit] NULL,
+	[whitenerDesc] [bit] NULL,
+	[isBlackDesc] [bit] NULL,
+	[ThDesc] [bit] NULL,
+	[FinalDesc] [bit] NULL,
+	[EditFor] [varchar](100) NULL,
+	[EditSkip] [bit] NULL,
+	[EditUserID] [int] NULL,
+	[EditedOn] [datetime2](0) NULL,
+ CONSTRAINT [PK_CounterFoilData] PRIMARY KEY CLUSTERED 
+(
+	[id] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY],
+ CONSTRAINT [UX_CounterFoilData_filename] UNIQUE NONCLUSTERED 
+(
+	[filename] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+
+
+
+2. Share full SP definitions used
+Create Procedure usp_LoadCounterfoilEditGrid 
+	@EditFor varchar (200), @UserID int
+As
+Begin
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], [barcode], [bubble_regno], [handwritten_regno],
+			 [subject_code], [BookletSlNo], BarcodeDesc, OMRRegNoDesc, ICRRegNoDesc, CandSigDesc, 
+			InvSignDesc, SubCodeDesc, BSlNoDesc,  WhitenerDesc WhitenerApplied, isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%], FinalDesc FinalStatus from CounterFoilData where FinalDesc =1
+			
+End
+
+go
+
+Create Procedure usp_CounterFoilEditSkip @EditFor, @UserID,@ID
+As
+Begin
+	insert into [dbo].[CounterFoilDataEditLog] select * from CounterFoilData where ID = @ID;
+	update CounterFoilData set EditSkip =1,[EditFor]= @EditFor,[EditUserID]= @UserID,[EditedOn]=getdate() where id = @ID;
+end
+go
+create procedure usp_CounterFoilEditFor
+	As
+	Begin
+		Select ReportName EditFor from [dbo].[ExportReport] where ReportFor = 'Counter Foil' and id <10
+		union
+		Select 'Full Data' EditFor
+	End
+go
+3. Provide image storage and format details
+	image attached.
+---------------------------------------
+
+1.What is the structure of CounterFoilDataEditLog?
+USE [KPSCOMRICRExtractionV2]
+GO
+
+/****** Object:  Table [dbo].[CounterFoilDataEditLog]    Script Date: 09/07/2026 04:01 PM ******/
+SET ANSI_NULLS ON
+GO
+
+SET QUOTED_IDENTIFIER ON
+GO
+
+CREATE TABLE [dbo].[CounterFoilDataEditLog](
+	[EditID] [int] IDENTITY(1,1) NOT NULL,
+	[id] [int] NOT NULL,
+	[filename] [nvarchar](500) NOT NULL,
+	[barcode] [nvarchar](100) NULL,
+	[bubble_regno] [nvarchar](50) NULL,
+	[handwritten_regno] [nvarchar](50) NULL,
+	[final_regno] [nvarchar](50) NULL,
+	[discrepancy] [bit] NULL,
+	[discrepancy_detail] [nvarchar](max) NULL,
+	[candidate_signed] [nvarchar](10) NULL,
+	[invigilator_signed] [nvarchar](10) NULL,
+	[subject_code] [nvarchar](100) NULL,
+	[BookletSlNo] [nvarchar](100) NULL,
+	[created_at] [datetime2](0) NULL,
+	[omr_threshold] [varchar](10) NULL,
+	[whitenerflag] [bit] NOT NULL,
+	[isblack] [bit] NOT NULL,
+	[updated_at] [datetime2](0) NULL,
+	[updated_by] [int] NULL,
+	[bubble_Th_status] [bit] NOT NULL,
+	[BarcodeDesc] [bit] NULL,
+	[OMRRegNoDesc] [bit] NULL,
+	[ICRRegNoDesc] [bit] NULL,
+	[CandSigDesc] [bit] NULL,
+	[InvSignDesc] [bit] NULL,
+	[SubCodeDesc] [bit] NULL,
+	[BSlNoDesc] [bit] NULL,
+	[whitenerDesc] [bit] NULL,
+	[isBlackDesc] [bit] NULL,
+	[ThDesc] [bit] NULL,
+	[FinalDesc] [bit] NULL,
+	[EditFor] [varchar](100) NULL,
+	[EditSkip] [bit] NULL,
+	[EditUserID] [int] NULL,
+	[EditedOn] [datetime2](0) NULL,
+ CONSTRAINT [PK_CounterFoilDataEditLog_1] PRIMARY KEY CLUSTERED 
+(
+	[EditID] ASC
+)WITH (PAD_INDEX = OFF, STATISTICS_NORECOMPUTE = OFF, IGNORE_DUP_KEY = OFF, ALLOW_ROW_LOCKS = ON, ALLOW_PAGE_LOCKS = ON, OPTIMIZE_FOR_SEQUENTIAL_KEY = OFF) ON [PRIMARY]
+) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY]
+GO
+2. How should the Filter button behave?
+Filter button click filters the data in the grid and show it 
+
+3. What is the expected update logic? --not understood
+
+First part give the full screen design python code till the Grid loading and Full image loading and zooming. Then one by one i will ask.
+
+
+change the grid in the CounterFoilDataEdit.py screen by refering grid in the SubjectBookletDiscrepancy.py file and the grid panel size should be same as SubjectBookletDiscrepancy.py. , add both horizental & vertical Scrolling option.
+CandSigDesc true means it should display yes in Candidate Signature and CandSigDesc false means it should display No in Candidate Signature 
+Similar logic for all yes/No fields
+
+ThDesc [Threshold < 35%] grid column Value not displaying in Threshold < 35%, yes/No fields
+
+Change CandSigDesc to CanSign  & InvSignDesc to InvSign
+1. Make The edit panel all Textbox controls width make small.
+2. Make edit panel into vertically 2 parts.
+3. The first half of the edit panel contains all textbox controls with labels &  bring all Yes/No controls with their respective labels to second half of the edit panel  
+4. Make the edit panel font size to be 14
+4. All button panel button font size to be 14
+self.from_sheet_var
+
+Add one image control Allign to ID Label in Edit panel 
+The image control should show the respective image portion when the textbox gets focus & the both signature Deopdownbox gets focus.
+for croped images refer counterfoilscanning.py
+
+Subject Code in dark red color rectangle
+Barcode in red color rectangle
+the croped area for the handwritten RollNo as showen in the 123.png image orange color rectangle
+Booklet Serial No in yellow color rectangle
+Candidate Sign in green color rectangle
+Invigilator Sign in indigo color rectangle
+reger to 123.png image
+
+move the Threshold < 35% dropdown box and label to laft side frame.
+Zoom in/out buttons now scale the crop preview from 100% up to 600%.
+
+Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], Center_Code, Subcenter_Code, 
+		 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] [Candidate Signed], [Invigilator_Signed], 
+		 FinalDesc FinalStatus from NominalRoll1 where ID >= @FromID and ID <= @ToID
+ 
+
+1. Based on the data grid the edit panel Control has to change	
+2. The grid data load onclick of Load button the below Stored procedure has to call:
+Create or Alter Procedure usp_LoadNominalRoll1EditGrid 
+	@EditFor varchar (200), @UserID int, @FromID int, @ToID int
+As
+Begin
+	if @EditFor ='Full Data'
+	begin
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1 where ID >= @FromID and ID <= @ToID
+			 --WhitenerDesc WhitenerApplied, ThDesc [Threshold < 35%], --where FinalDesc =1
+	end
+	else if @EditFor ='All discrepancy data'
+	begin
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1 where  FinalDesc =1 and ID >= @FromID and ID <= @ToID 
+	end
+	else if @EditFor ='Subject Code discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1 where SubDesc =1 and ID >= @FromID and ID <= @ToID 
+	end
+	else if @EditFor ='Center Code discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1 where CenterCodeDesc =1 and ID >= @FromID and ID <= @ToID 
+	end
+	else if @EditFor ='Sub Center Code discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1 where SubCenterCodeDesc =1 and ID >= @FromID and ID <= @ToID 
+	end
+	--else if @EditFor ='Written RegNo discrepancy'
+	--begin
+	--Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], [barcode], [bubble_regno], [handwritten_regno],
+	--		 [subject_code], [BookletSlNo], CandSigDesc, 
+	--		InvSignDesc, WhitenerDesc WhitenerApplied, isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%], FinalDesc FinalStatus from CounterFoilData where ICRRegNoDesc=1
+	--end
+	else if @EditFor ='OMR No discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1  where [OMRDesc]=1 and ID >= @FromID and ID <= @ToID 
+	end
+	else if @EditFor ='Roll No discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1  where [RegNoDesc]=1 and ID >= @FromID and ID <= @ToID 
+	end
+	else if @EditFor ='QBVC discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1  where QPVCDesc=1 and ID >= @FromID and ID <= @ToID 
+	end
+	--else if @EditFor ='Whiter Used in the boubles'
+	--begin
+	--Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], [barcode], [bubble_regno], [handwritten_regno],
+	--		 [subject_code], [BookletSlNo], CandSigDesc, 
+	--		InvSignDesc, WhitenerDesc WhitenerApplied, isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%], FinalDesc FinalStatus from CounterFoilData where WhitenerDesc=1
+	--end
+	--else if @EditFor ='Boubles marked <35% Threshold marking'
+	--begin
+	--Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], [barcode], [bubble_regno], [handwritten_regno],
+	--		 [subject_code], [BookletSlNo], CandSigDesc, 
+	--		InvSignDesc, WhitenerDesc WhitenerApplied, isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%], FinalDesc FinalStatus from CounterFoilData where ThDesc=1
+	--end
+	else if @EditFor ='Candidate''s Signature discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1  where CandSignDesc=1 and ID >= @FromID and ID <= @ToID 
+	end
+	else if @EditFor ='Invigilator''s Signature discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1  where InvSignDesc=1 and ID >= @FromID and ID <= @ToID 
+	end
+	--else if @EditFor ='Non standard OMR sheet used'
+	--begin
+	--Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], [barcode], [bubble_regno], [handwritten_regno],
+	--		 [subject_code], [BookletSlNo], CandSigDesc, 
+	--		InvSignDesc, WhitenerDesc WhitenerApplied, isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%], FinalDesc FinalStatus from CounterFoilData where isBlackDesc=1
+	--end
+
+End
+
+3. The edit panel controls has to change as per the grid fields 
+4. The 	update button has to execute the stored procedure as below:
+Create or ALTER PROCEDURE [dbo].usp_NominalRoll1EditUpdate 
+(
+      @EditFor varchar(200), @UserID int, @ID int, @CenterCode varchar(20),
+	  @SubCenterCode varchar(20),@SubCode varchar(10),@OMRNo varchar(20),@RegNo varchar(20), @QPVC varchar(2),
+	  @CandSig bit, @InvSign bit
+)
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+    
+    BEGIN TRY
+
+        BEGIN
+		   INSERT INTO NominalRoll1DataEditLog ([id]
+			  ,[filename]
+			  ,[center_code]
+			  ,[subcenter_code]
+			  ,[subject_code]
+			  ,[invigilator_signed]
+			  ,[row_number]
+			  ,[status]
+			  ,[signature_present]
+			  ,[omr_no]
+			  ,[registration_no]
+			  ,[qpvc]
+			  ,[created_at]
+			  ,[CreatedBy]
+			  ,[CenterCodeDesc]
+			  ,[SubCenterCodeDesc]
+			  ,[SubDesc]
+			  ,[StatusDesc]
+			  ,[CandSignDesc]
+			  ,[InvSignDesc]
+			  ,[OMRDesc]
+			  ,[RegNoDesc]
+			  ,[QPVCDesc]
+			  ,[FinalDesc]
+			  ,[EditFor]
+			  ,[EditSkip]
+			  ,[EditUserID]
+			  ,[EditedOn])
+             
+             SELECT
+				  [id]
+				  ,[filename]
+				  ,[center_code]
+				  ,[subcenter_code]
+				  ,[subject_code]
+				  ,[invigilator_signed]
+				  ,[row_number]
+				  ,[status]
+				  ,[signature_present]
+				  ,[omr_no]
+				  ,[registration_no]
+				  ,[qpvc]
+				  ,[created_at]
+				  ,[CreatedBy]
+				  ,[CenterCodeDesc]
+				  ,[SubCenterCodeDesc]
+				  ,[SubDesc]
+				  ,[StatusDesc]
+				  ,[CandSignDesc]
+				  ,[InvSignDesc]
+				  ,[OMRDesc]
+				  ,[RegNoDesc]
+				  ,[QPVCDesc]
+				  ,[FinalDesc]
+				  ,[EditFor]
+				  ,[EditSkip]
+				  ,[EditUserID]
+				  ,[EditedOn]
+             FROM NominalRoll1Data
+             WHERE ID=@ID
+            
+             UPDATE NominalRoll1Data
+             SET [center_code] =@CenterCode 
+				  ,[subcenter_code] = @SubCenterCode
+				  ,[subject_code] = @SubCode
+				  ,[signature_present]= @CandSig, [invigilator_signed] = @InvSign
+				  ,[omr_no] = @OMRNo
+				  ,[registration_no] = @RegNo
+				  ,[qpvc]= @QPVC
+				  --,whitenerDesc = @WhitenerDesc
+				  --,isBlackDesc = @isBlackDesc
+				  --,[ThDesc] = @ThDesc
+				  ,[EditFor] = @EditFor
+				  ,[EditUserID]= @UserID
+				  ,[EditedOn]=GETDATE()                 
+             WHERE ID=@ID
+			 update NominalRoll1Data 
+			    set [center_code] = iif(len(Replace([center_code],' ',''))<1,1,0) , subcenter_code = iif(len(Replace([subcenter_code],' ',''))<1,1,0),RegNoDesc = iif(len(Replace([registration_no],' ',''))<9,'1',0),
+				CandSigDesc = iif([candidate_signed] = 1,0,1) ,InvSignDesc=iif( invigilator_signed = 1,0,1) , [SubDesc]= iif(len(Replace([subject_code],' ',''))<3,'1',0) , OMRoDesc= iif(len(Replace([omr_no],' ',''))<7,'1',0),
+				QPVCDesc =iif(len(Replace(A.[qpvc],' ',''))<1,1,0) 
+				--[whitenerflag] = whitenerDesc, [isblack] = isBlackDesc, [bubble_Th_status] = ThDesc
+			WHERE ID=@ID
+			Update NominalRoll1Data Set FinalDesc = 1 where (CenterCodeDesc =1 or SubCenterCodeDesc =1 or SubDesc =1 or StatusDesc=1 or CandSignDesc =0 or InvSignDesc=0 or  OMRDesc=1 or  RegNoDesc=1 or QPVCDesc =1) and ID=@ID
+			Update NominalRoll1Data Set FinalDesc = 0 where (CenterCodeDesc =0 AND SubCenterCodeDesc =0 AND SubDesc =0 AND StatusDesc=0 AND CandSignDesc =1 AND InvSignDesc=1 AND OMRDesc=0 AND RegNoDesc=0 AND QPVCDesc =0) and ID=@ID
+        END
+        
+
+    END TRY
+
+    BEGIN CATCH
+
+         INSERT INTO ErrorLog
+         (
+			[ErrorScreen],[ErrorModule],
+             ErrorText,
+             ErrorTime
+         )
+         VALUES
+         (
+             'NominalRoll1EditedData','usp_NominalRoll1EditUpdate',
+			 ERROR_MESSAGE(),
+             GETDATE()
+         )
+
+    END CATCH
+
+END
+5. The skip button has to execute the stored procedure:
+Create or Alter Procedure usp_NominalRoll1EditSkip @EditFor varchar(200), @UserID int ,@ID int
+As
+Begin
+	Insert into [dbo].[NominalRoll1EditLog] select * from NominalRoll1 where ID = @ID;
+	update NominalRoll1 set EditSkip =1,[EditFor]= @EditFor,[EditUserID]= @UserID,[EditedOn]=getdate() where id = @ID;
+end
+Go
+Create or Alter Procedure usp_NominalRoll2EditSkip @EditFor varchar(200), @UserID int ,@ID int
+As
+Begin
+	Insert into [dbo].[NominalRoll2EditLog] select * from NominalRoll2 where ID = @ID;
+	update NominalRoll2 set EditSkip =1,[EditFor]= @EditFor,[EditUserID]= @UserID,[EditedOn]=getdate() where id = @ID;
+end
+Go
+------------------------------------------------------------
+
+Grid loading procedure had changed as given below:
+
+Create or Alter Procedure usp_LoadNominalRoll1EditGrid 
+	@EditFor varchar (200), @UserID int, @FromID int, @ToID int
+As
+Begin
+	if @EditFor ='Full Data'
+	begin
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1 where ID >= @FromID and ID <= @ToID
+			 --WhitenerDesc WhitenerApplied, ThDesc [Threshold < 35%], --where FinalDesc =1
+	end
+	else if @EditFor ='All discrepancy data'
+	begin
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1 where  FinalDesc =1 and ID >= @FromID and ID <= @ToID 
+	end
+	else if @EditFor ='Subject Code discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1 where SubDesc =1 and ID >= @FromID and ID <= @ToID 
+	end
+	else if @EditFor ='Center Code discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1 where CenterCodeDesc =1 and ID >= @FromID and ID <= @ToID 
+	end
+	else if @EditFor ='Sub Center Code discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1 where SubCenterCodeDesc =1 and ID >= @FromID and ID <= @ToID 
+	end
+	--else if @EditFor ='Written RegNo discrepancy'
+	--begin
+	--Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], [barcode], [bubble_regno], [handwritten_regno],
+	--		 [subject_code], [BookletSlNo], CandSigDesc, 
+	--		InvSignDesc, WhitenerDesc WhitenerApplied, isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%], FinalDesc FinalStatus from CounterFoilData where ICRRegNoDesc=1
+	--end
+	else if @EditFor ='OMR No discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1  where [OMRDesc]=1 and ID >= @FromID and ID <= @ToID 
+	end
+	else if @EditFor ='Roll No discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1  where [RegNoDesc]=1 and ID >= @FromID and ID <= @ToID 
+	end
+	else if @EditFor ='QBVC discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1  where QPVCDesc=1 and ID >= @FromID and ID <= @ToID 
+	end
+	--else if @EditFor ='Whiter Used in the boubles'
+	--begin
+	--Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], [barcode], [bubble_regno], [handwritten_regno],
+	--		 [subject_code], [BookletSlNo], CandSigDesc, 
+	--		InvSignDesc, WhitenerDesc WhitenerApplied, isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%], FinalDesc FinalStatus from CounterFoilData where WhitenerDesc=1
+	--end
+	--else if @EditFor ='Boubles marked <35% Threshold marking'
+	--begin
+	--Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], [barcode], [bubble_regno], [handwritten_regno],
+	--		 [subject_code], [BookletSlNo], CandSigDesc, 
+	--		InvSignDesc, WhitenerDesc WhitenerApplied, isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%], FinalDesc FinalStatus from CounterFoilData where ThDesc=1
+	--end
+	else if @EditFor ='Candidate''s Signature discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1  where CandSignDesc=1 and ID >= @FromID and ID <= @ToID 
+	end
+	else if @EditFor ='Invigilator''s Signature discrepancy'
+	begin
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 FinalDesc FinalStatus from NominalRoll1  where InvSignDesc=1 and ID >= @FromID and ID <= @ToID 
+	end
+	--else if @EditFor ='Non standard OMR sheet used'
+	--begin
+	--Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[filename], [barcode], [bubble_regno], [handwritten_regno],
+	--		 [subject_code], [BookletSlNo], CandSigDesc, 
+	--		InvSignDesc, WhitenerDesc WhitenerApplied, isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%], FinalDesc FinalStatus from CounterFoilData where isBlackDesc=1
+	--end
+
+End
+
+go
+
+The Row_Number column added. this column has to show in the edit panel side to ID label adding a new label
+

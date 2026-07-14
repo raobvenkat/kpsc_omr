@@ -5,7 +5,7 @@ from PIL import Image, ImageTk, ImageOps
 import db_credentials
 
 
-class CounterFoilDataEdit:
+class NominalRoll2DataEdit:
     PAGE_SIZE = 50
     # Horizontal offset (pixels) for the status label inside the image panel
     STATUS_LABEL_LEFT_OFFSET = 110
@@ -13,7 +13,7 @@ class CounterFoilDataEdit:
     def __init__(self, root, user_id):
         self.root = root
         self.user_id = user_id
-        self.root.title('Counter Foil Data Edit')
+        self.root.title('Nominal Roll 2 (OMR Test) Data Edit')
         try:
             self.root.state('zoomed')
         except Exception:
@@ -26,6 +26,7 @@ class CounterFoilDataEdit:
         self.total_pages = 1
         self.current_image = None
         self.current_photo = None
+        self.current_crop_photo = None
         self.zoom_factor = 1.0
         self.crop_zoom_factor = 0.25
 
@@ -45,31 +46,50 @@ class CounterFoilDataEdit:
         self.wire_buttons()
 
     def create_controls(self):
+
+        body = tk.Frame(self.root)
+        body.pack(fill='both', expand=True)
+
+        # Left Side
+        left_frame = tk.Frame(body, width=650)
+        left_frame.pack(side='left', fill='both', expand=False)
+        left_frame.pack_propagate(False)
+
+        # Right Side
+        right_container = tk.Frame(body)
+        right_container.pack(side='right', fill='both', expand=True)
+
+        # Header ONLY for image area
         lbl_header = tk.Label(
-            self.root,
-            text='Counter Foil Data Edit',
+            right_container,
+            text='Nominal Roll 2 (OMR Test) Data Edit',
             font=('Segoe UI', 16, 'bold'),
             bg='#0D47A1',
             fg='white',
             padx=10,
             pady=8
         )
-        lbl_header.pack(fill='x', pady=5)
+        lbl_header.pack(fill='x')
 
-        body = tk.Frame(self.root)
-        body.pack(fill='both', expand=True)
+        # Full image panel
+        right_frame = tk.LabelFrame(
+            right_container,
+            text='Full Image'
+        )
+        right_frame.pack(
+            fill='both',
+            expand=True,
+            padx=5,
+            pady=0
+        )
 
-        left_frame = tk.Frame(body, width=650)
-        left_frame.pack(side='left', fill='both', expand=False)
-        left_frame.pack_propagate(False)
-
-        right_frame = tk.LabelFrame(body, text='Full Image')
-        right_frame.pack(side='right', fill='both', expand=True, padx=5, pady=0)
-
+        # LEFT PANELS
         self.create_filter_panel(left_frame)
         self.create_grid_panel(left_frame)
         self.create_edit_panel(left_frame)
         self.create_button_panel(left_frame)
+
+        # RIGHT PANEL
         self.create_image_panel(right_frame)
 
     def create_filter_panel(self, parent):
@@ -127,17 +147,17 @@ class CounterFoilDataEdit:
         cols = (
             'SlNo',
             'SheetNo',
+            'Row_Number',
             'FileName',
-            'Barcode',
-            'BubbleRegNo',
-            'WrittenRegNo',
-            'SubjectCode',
-            'BookletSlNo',
+            'Center_Code',
+            'Subcenter_Code',
+            'OMR_No',
+            'Registration_No',
+            'QPVC',
             'CandSig',
             'InvSig',
-            'Whitener',
-            'NonStandard',
-            'Threshold'
+            #'Whitener', 'NonStandard','Threshold'
+            
         )
 
         self.grid = ttk.Treeview(
@@ -270,23 +290,143 @@ class CounterFoilDataEdit:
         )
 
     def create_edit_panel(self, parent):
-        frame = ttk.LabelFrame(parent, text='Edit')
-        frame.pack(fill='x', padx=5, pady=5)
 
-        frame.grid_columnconfigure(0, weight=1)
-        frame.grid_columnconfigure(1, weight=1)
+        frame = ttk.LabelFrame(
+            parent,
+            text='Edit'
+        )
+
+        frame.pack(
+            fill='x',
+            padx=5,
+            pady=5
+        )
+
+        frame.grid_columnconfigure(
+            0,
+            weight=1
+        )
+
+        frame.grid_columnconfigure(
+            1,
+            weight=1
+        )
+
+        # ==========================================
+        # LEFT SIDE
+        # ==========================================
 
         left_frame = ttk.Frame(frame)
-        left_frame.grid(row=1, column=0, sticky='nsew', padx=(5, 10), pady=5)
 
-        # Move ID label into the left frame so it stays with the left-side controls
-        self.lbl_id = ttk.Label(left_frame, text='ID :', font=('Segoe UI', 14))
-        self.lbl_id.grid(row=0, column=0, sticky='w', padx=5, pady=5, columnspan=2)
+        left_frame.grid(
+            row=0,
+            column=0,
+            sticky='nsew',
+            padx=(5, 10),
+            pady=5
+        )
 
-        # Left frame now holds the ID label at row 0; fields start at row 1
+        self.lbl_id = ttk.Label(
+            left_frame,
+            text='ID :',
+            font=('Segoe UI', 14)
+        )
+
+        self.lbl_id.grid(
+            row=0,
+            column=0,
+            columnspan=2,
+            sticky='w',
+            padx=5,
+            pady=5
+        )
         
+        self.lbl_row_number = ttk.Label(
+            left_frame,
+            text='Row No :',
+            font=('Segoe UI', 14)
+        )
+
+        self.lbl_row_number.grid(
+            row=0,
+            column=1,
+            sticky='w',
+            padx=20,
+            pady=5
+        )
+
+        self.editor_vars = {}
+
+        left_fields = [
+
+            ('Center Code'     , 'center_code_var'),
+
+            ('Sub Center Code' , 'subcenter_var'),
+
+            ('Subject Code'    , 'subject_code_var'),
+
+            ('OMR No'          , 'omr_var'),
+
+            ('Registration No' , 'regno_var'),
+
+            ('QPVC'            , 'qpvc_var')
+
+        ]
+
+        row_no = 1
+
+        for label_text, var_name in left_fields:
+
+            ttk.Label(
+                left_frame,
+                text=label_text,
+                font=('Segoe UI', 14)
+            ).grid(
+                row=row_no,
+                column=0,
+                sticky='w',
+                padx=5,
+                pady=4
+            )
+
+            variable = tk.StringVar()
+
+            self.editor_vars[var_name] = variable
+
+            entry = ttk.Entry(
+                left_frame,
+                textvariable=variable,
+                width=30,
+                font=('Segoe UI', 13)
+            )
+
+            entry.grid(
+                row=row_no,
+                column=1,
+                padx=5,
+                pady=4,
+                sticky='w'
+            )
+            entry.bind('<FocusIn>', lambda event, field=var_name: self.on_focus_crop(field))
+            self.edit_entry_widgets[var_name] = entry
+
+            row_no += 1
+
+        # ==========================================
+        # RIGHT SIDE
+        # ==========================================
+
         right_frame = ttk.Frame(frame)
-        right_frame.grid(row=1, column=1, sticky='nsew', padx=(10, 5), pady=5)
+
+        right_frame.grid(
+            row=0,
+            column=1,
+            sticky='nsew',
+            padx=(10, 5),
+            pady=5
+        )
+        right_frame.grid_columnconfigure(0, weight=1)
+        right_frame.grid_columnconfigure(1, weight=1)
 
         self.crop_frame = ttk.LabelFrame(right_frame, text='Focus Crop')
         self.crop_frame.grid(row=0, column=0, columnspan=2, sticky='ew', padx=5, pady=(0, 2))
@@ -311,90 +451,55 @@ class CounterFoilDataEdit:
         self.crop_canvas.configure(xscrollcommand=crop_hscroll.set, yscrollcommand=crop_vscroll.set)
         self.crop_canvas.bind('<MouseWheel>', self.crop_mouse_zoom)
 
-        fields = [
-            ('Subject Code', 'subject_code_var'),
-            ('Booklet Sl No', 'booklet_var'),
-            ('Barcode', 'barcode_var'),
-            ('Bubble RegNo', 'bubble_var'),
-            ('Handwritten RegNo', 'hand_var')
+        yn_values = ['Yes', 'No']
+
+        right_fields = [
+
+            ('Candidate Signature', 'candsig'),
+
+            ('Invigilator Signature', 'invsig')
+
         ]
 
-        self.editor_vars = {}
-        for r, (lbl, varname) in enumerate(fields, start=1):
-            ttk.Label(left_frame, text=lbl, font=('Segoe UI', 14)).grid(row=r, column=0, sticky='w', padx=5, pady=4)
-            v = tk.StringVar()
-            self.editor_vars[varname] = v
-            entry = ttk.Entry(left_frame, textvariable=v, width=18, font=('Segoe UI', 13))
-            entry.grid(row=r, column=1, padx=5, pady=4)
-            entry.bind('<FocusIn>', lambda event, field=varname: self.on_focus_crop(field))
-            self.edit_entry_widgets[varname] = entry
+        row_no = 1
 
-        yn = ['Yes', 'No']
-        right_frame.grid_columnconfigure(0, weight=1)
-        right_frame.grid_columnconfigure(1, weight=1)
-        
-        for r, (lbl, varname) in enumerate([
-            ('Candidate Signature', 'candsig'),
-            ('Invigilator Signature', 'invsig'),
-            ('Whitener Applied', 'whitener')
-        ], start=0):
+        for label_text, var_name in right_fields:
 
-            ttk.Label(right_frame, text=lbl, font=('Segoe UI', 14)).grid(row=r+1, column=0, sticky='w', padx=5, pady=4)
-            v = tk.StringVar()
-            self.editor_vars[varname] = v
-            combo = ttk.Combobox(right_frame, textvariable=v, values=yn, state='readonly', width=5, font=('Segoe UI', 13))
-            combo.grid(row=r+1, column=1, padx=5, pady=4)
-            combo.bind('<FocusIn>', lambda event, field=varname: self.on_focus_crop(field))
+            ttk.Label(
+                right_frame,
+                text=label_text,
+                font=('Segoe UI', 14)
+            ).grid(
+                row=row_no,
+                column=0,
+                sticky='w',
+                padx=5,
+                pady=4
+            )
 
-        # Move Threshold dropdown to the left frame below the handwritten field
-        try:
-            thr_row = len(fields) + 1
-        except Exception:
-            thr_row = 6
-        ttk.Label(left_frame, text='Threshold < 35%', font=('Segoe UI', 14)).grid(row=thr_row, column=0, sticky='w', padx=5, pady=4)
-        v = tk.StringVar()
-        self.editor_vars['threshold'] = v
-        thr_combo = ttk.Combobox(left_frame, textvariable=v, values=yn, state='readonly', width=5, font=('Segoe UI', 13))
-        thr_combo.grid(row=thr_row, column=1, padx=5, pady=4)
-        thr_combo.bind('<FocusIn>', lambda event, field='threshold': self.on_focus_crop(field))
-        nonstd_row = thr_row + 1
+            variable = tk.StringVar()
 
-        ttk.Label(
-            left_frame,
-            text='Non Standard Sheet',
-            font=('Segoe UI', 14)
-        ).grid(
-            row=nonstd_row,
-            column=0,
-            sticky='w',
-            padx=5,
-            pady=4
-        )
+            self.editor_vars[var_name] = variable
 
-        v = tk.StringVar()
-        self.editor_vars['nonstd'] = v
+            combo = ttk.Combobox(
+                right_frame,
+                textvariable=variable,
+                values=yn_values,
+                state='readonly',
+                width=10,
+                font=('Segoe UI', 13)
+            )
 
-        nonstd_combo = ttk.Combobox(
-            left_frame,
-            textvariable=v,
-            values=['Yes', 'No'],
-            state='readonly',
-            width=5,
-            font=('Segoe UI', 13)
-        )
+            combo.grid(
+                row=row_no,
+                column=1,
+                padx=5,
+                pady=4,
+                sticky='w'
+            )
 
-        nonstd_combo.grid(
-            row=nonstd_row,
-            column=1,
-            padx=5,
-            pady=4
-        )
-
-        nonstd_combo.bind(
-            '<FocusIn>',
-            lambda event, field='nonstd':
-            self.on_focus_crop(field)
-        )
+            combo.bind('<FocusIn>', lambda event, field=var_name: self.on_focus_crop(field))
+            row_no += 1
 
     def on_focus_crop(self, field_name):
         self.current_focus_field = field_name
@@ -406,10 +511,11 @@ class CounterFoilDataEdit:
         crop_image = self.get_focus_crop_image(field_name)
         self.display_focus_crop(crop_image)
 
+
     def get_focus_crop_image(self, field_name):
         if self.current_image is None:
             return None
-
+        row_no = getattr(self, "current_row_no", 1)
         img = self.current_image.convert('RGB')
         w, h = img.size
         target_w = 1654
@@ -418,58 +524,92 @@ class CounterFoilDataEdit:
         scale_y = h / target_h if target_h else 1.0
 
         try:
-            if field_name == 'subject_code_var':
-                x1 = int(140 * scale_x)
-                x2 = int(500 * scale_x)
-                y1 = int(20 * scale_y)
-                y2 = int(140 * scale_y)
-            elif field_name == 'booklet_var':
-               #x1 = int(w * 0.556) x2 = int(w * 0.949) y1 = int(h * 0.725)     y2 = int(h * 0.800
-                
-                x1 = int(w * 0.62)
-                x2 = int(w * 0.95)
-                y1 = int(h * 0.68)
-                y2 = int(h * 0.78)
-            elif field_name == 'barcode_var':
-                x1 = int(w * 0.55)
-                x2 = w
-                y1 = int(h * 0.03)
-                y2 = int(h * 0.18)
-            elif field_name == 'bubble_var':
-                # Bubble RegNo area is intentionally not shown as a focus crop
-                # (too large / not useful). Return None to indicate no crop.
-                #return None
-                x1 = int(w * 0.55)
-                x2 = w
-                y1 = int(h * 0.30)
-                y2 = int(h * 0.64)
-
-            elif field_name == 'hand_var':
-                # Crop for handwritten Register No (matches orange rectangle in 123.png)
-                # Positioned top-right under the barcode area
-                x1 = int(w * 0.55)
-                x2 = w
-                y1 = int(h * 0.30)
-                y2 = int(h * 0.40)
+            #if self._get_row_value(vals, "Row_Number", "RowNo", "Row Number") == 1:
+            if field_name == 'center_code_var':
+                x1 = int(w * 0.05)
+                x2 = int(w * 0.35)
+                y1 = int(h * 0.12)
+                y2 = int(h * 0.14)
+            elif field_name == 'subcenter_var':
+                x1 = int(w * 0.05)
+                x2 = int(w * 0.35)
+                y1 = int(h * 0.13)
+                y2 = int(h * 0.17)
+            elif field_name == 'subject_code_var':
+                x1 = int(w * 0.53)
+                x2 = int(w * 0.80)
+                y1 = int(h * 0.13)
+                y2 = int(h * 0.17)
+            elif field_name == 'omr_var':               
+                if row_no == 1:
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.23), int(h*0.28)
+                elif row_no == 2:
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.32), int(h*0.38)
+                elif row_no == 3:
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.42), int(h*0.48)
+                elif row_no == 4:
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.52), int(h*0.58)
+                elif row_no == 5:
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.62), int(h*0.68)
+                elif row_no == 6:
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.72), int(h*0.78)
+                else:
+                     return None
+            elif field_name == 'regno_var':
+                if row_no == 1:
+                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.23), int(h*0.28)
+                elif row_no == 2:
+                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.32), int(h*0.38)
+                elif row_no == 3:
+                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.42), int(h*0.48)
+                elif row_no == 4:
+                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.52), int(h*0.58)
+                elif row_no == 5:
+                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.62), int(h*0.68)
+                elif row_no == 6:
+                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.72), int(h*0.78)
+                else:
+                     return None
+            elif field_name == 'qpvc_var':
+                if row_no == 1:
+                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.23), int(h*0.28)
+                elif row_no == 2:
+                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.32), int(h*0.38)
+                elif row_no == 3:
+                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.42), int(h*0.48)
+                elif row_no == 4:
+                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.52), int(h*0.58)
+                elif row_no == 5:
+                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.62), int(h*0.68)
+                elif row_no == 6:
+                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.72), int(h*0.78)
+                else:
+                     return None
             elif field_name == 'candsig':
-                # Use the same area previously used for bubble_var so the
-                # Candidate Signature focus shows that region instead.
-                x1 = int(w * 0.04)
-                x2 = int(w * 0.58)
-                #y1 = int(h * 0.24)
-                y1 = int(h * 0.34)
-                y2 = int(h * 0.45)
+                if row_no == 1:
+                    x1, x2, y1, y2 = int(w*0.18), int(w*0.48), int(h*0.27), int(h*0.32)
+                elif row_no == 2:
+                    x1, x2, y1, y2 = int(w*0.18), int(w*0.48), int(h*0.37), int(h*0.42)
+                elif row_no == 3:
+                    x1, x2, y1, y2 = int(w*0.18), int(w*0.48), int(h*0.46), int(h*0.52)
+                elif row_no == 4:
+                    x1, x2, y1, y2 = int(w*0.18), int(w*0.48), int(h*0.56), int(h*0.62)
+                elif row_no == 5:
+                    x1, x2, y1, y2 = int(w*0.18), int(w*0.48), int(h*0.66), int(h*0.72)
+                elif row_no == 6:
+                    x1, x2, y1, y2 = int(w*0.18), int(w*0.48), int(h*0.76), int(h*0.82)
+                else:
+                     return None
             elif field_name == 'invsig':
-                #x1 = int(130 * scale_x)
-                #x2 = int(900 * scale_x)
-                #y1 = int(152 * scale_y)
-                #y2 = int(252 * scale_y)
-                x1 = int(w * 0.04)
-                x2 = int(w * 0.58)
-                y1 = int(h * 0.50)
-                y2 = int(h * 0.60)
+                x1 = int(w * 0.10)
+                x2 = int(w * 0.40)
+                y1 = int(h * 0.90)
+                y2 = int(h * 0.95)
             else:
                 return None
+            #elif self._get_row_value(vals, "Row_Number", "RowNo", "Row Number") == 2:
+                
+            
 
             x1 = max(0, min(w, x1))
             y1 = max(0, min(h, y1))
@@ -523,14 +663,54 @@ class CounterFoilDataEdit:
         ttk.Button(toolbar, text='+', command=self.zoom_in).pack(side='left')
         ttk.Button(toolbar, text='-', command=self.zoom_out).pack(side='left')
 
-        self.canvas = tk.Canvas(parent, bg='gray')
-        self.canvas.pack(fill='both', expand=True)
+        #self.canvas = tk.Canvas(parent, bg='gray')
+        #self.canvas.pack(fill='both', expand=True)
 
-        hscroll = ttk.Scrollbar(parent, orient='horizontal', command=self.canvas.xview)
-        vscroll = ttk.Scrollbar(parent, orient='vertical', command=self.canvas.yview)
-        self.canvas.configure(xscrollcommand=hscroll.set, yscrollcommand=vscroll.set)
+        #hscroll = ttk.Scrollbar(parent, orient='horizontal', command=self.canvas.xview)
+        #vscroll = ttk.Scrollbar(parent, orient='vertical', command=self.canvas.yview)
+        #self.canvas.configure(xscrollcommand=hscroll.set, yscrollcommand=vscroll.set)
+        #hscroll.pack(fill='x')
+        #vscroll.pack(side='right', fill='y')
+        image_frame = tk.Frame(parent)
+        image_frame.pack(fill='both', expand=True)
+
+        self.canvas = tk.Canvas(
+            image_frame,
+            bg='gray'
+        )
+
+        vscroll = ttk.Scrollbar(
+            image_frame,
+            orient='vertical',
+            command=self.canvas.yview
+        )
+
+        self.canvas.configure(
+            yscrollcommand=vscroll.set
+        )
+
+        self.canvas.pack(
+            side='left',
+            fill='both',
+            expand=True
+        )
+
+        vscroll.pack(
+            side='right',
+            fill='y'
+        )
+
+        hscroll = ttk.Scrollbar(
+            parent,
+            orient='horizontal',
+            command=self.canvas.xview
+        )
+
+        self.canvas.configure(
+            xscrollcommand=hscroll.set
+        )
+
         hscroll.pack(fill='x')
-        vscroll.pack(side='right', fill='y')
         self.canvas.bind('<MouseWheel>', self.mouse_zoom)
 
         # Status message shown below the full image area.
@@ -555,7 +735,7 @@ class CounterFoilDataEdit:
         try:
             conn = db_credentials.get_sql_connection()
             cur = conn.cursor()
-            cur.execute('EXEC usp_CounterFoilEditFor')
+            cur.execute('EXEC usp_NominalRoll2EditFor')
             self.cbo_editfor['values'] = [r[0] for r in cur.fetchall()]
             conn.close()
         except Exception as ex:
@@ -566,7 +746,7 @@ class CounterFoilDataEdit:
             conn = db_credentials.get_sql_connection()
             cursor = conn.cursor()
             cursor.execute(
-                'EXEC usp_LoadCounterfoilEditGrid @EditFor=?, @UserID=?, @FromID=?, @ToID=?',
+                'EXEC usp_LoadNominalRoll2EditGrid @EditFor=?, @UserID=?, @FromID=?, @ToID=?',
                 (self.edit_for_var.get(), self.user_id, self.from_sheet_var.get(), self.to_sheet_var.get())
             )
             self.columns = [c[0] for c in cursor.description]
@@ -617,17 +797,43 @@ class CounterFoilDataEdit:
 
         self.message_var.set(f'Page {self.current_page} of {self.total_pages}')
 
+    def _normalize_column_name(self, value):
+        return ''.join(ch.lower() for ch in str(value) if ch.isalnum())
+
+    def _get_column_index(self, *column_names):
+        if not self.columns:
+            return None
+        expected = {self._normalize_column_name(name) for name in column_names}
+        for idx, col in enumerate(self.columns):
+            if self._normalize_column_name(col) in expected:
+                return idx
+        return None
+
+    def _get_row_value(self, values, *column_names):
+        idx = self._get_column_index(*column_names)
+        if idx is None or idx >= len(values):
+            return ''
+        return values[idx]
+
     def filter_grid(self):
         sheet = self.sheetno_var.get().strip()
         fname = self.filename_var.get().strip().lower()
+        sheet_idx = self._get_column_index('SheetNo', 'Sheet_No', 'Sheet')
+        fname_idx = self._get_column_index('FileName', 'File_Name', 'File')
         self.filtered_rows = []
         for row in self.rows:
             s1 = True
             s2 = True
             if sheet:
-                s1 = str(row[1]) == sheet
+                if sheet_idx is not None and sheet_idx < len(row):
+                    s1 = str(row[sheet_idx]) == sheet
+                else:
+                    s1 = False
             if fname:
-                s2 = fname in str(row[2]).lower()
+                if fname_idx is not None and fname_idx < len(row):
+                    s2 = fname in str(row[fname_idx]).lower()
+                else:
+                    s2 = False
             if s1 and s2:
                 self.filtered_rows.append(row)
 
@@ -659,71 +865,78 @@ class CounterFoilDataEdit:
             v.set('')
 
     def grid_row_selected(self, event=None):
+
         selected = self.grid.selection()
+
         if not selected:
             return
-        vals = self.grid.item(selected[0])['values']
+
+        vals = self.grid.item(
+            selected[0]
+        )['values']
+
         if not vals:
             return
 
-        def safe_value(values, index):
-            return values[index] if index < len(values) else ''
+        self.lbl_id.config(
+            text=f'ID : {self._get_row_value(vals, "ID", "Id", "SlNo")}'
+        )
 
-        row_id = safe_value(vals, 1)
-        self.lbl_id.config(text=f'ID : {row_id}')
+        self.lbl_row_number.config(
+            text=f'Row No : {self._get_row_value(vals, "Row_Number", "RowNo", "Row Number")}'
+        )
+        
+        row_no = self._get_row_value(
+            vals,
+            "Row_Number",
+            "RowNo",
+            "Row Number"
+        )
 
-        if len(vals) > 7:
-            self.editor_vars['barcode_var'].set(str(safe_value(vals, 3)))
-            self.editor_vars['bubble_var'].set(str(safe_value(vals, 4)))
-            self.editor_vars['hand_var'].set(str(safe_value(vals, 5)))
-            self.editor_vars['subject_code_var'].set(str(safe_value(vals, 6)))
-            self.editor_vars['booklet_var'].set(str(safe_value(vals, 7)))
+        self.current_row_no = int(row_no)
 
-        def boolmap(value):
-            if isinstance(value, bool):
-                return 'Yes' if value else 'No'
-            text = str(value).strip().lower()
-            if text in ('1', 'true', 'yes', 'y'):
-                return 'Yes'
-            if text in ('0', 'false', 'no', 'n'):
-                return 'No'
-            return ''
+        self.editor_vars['center_code_var'].set(
+            str(self._get_row_value(vals, 'Center_Code', 'CenterCode'))
+        )
 
-        def normalize_name(value):
-            return ''.join(ch.lower() for ch in str(value) if ch.isalnum())
+        self.editor_vars['subcenter_var'].set(
+            str(self._get_row_value(vals, 'Subcenter_Code', 'SubCenterCode', 'SubCenter'))
+        )
 
-        def column_matches(column_name, desired_name):
-            col_norm = normalize_name(column_name)
-            desired_norm = normalize_name(desired_name)
-            return (
-                col_norm == desired_norm
-                or desired_norm in col_norm
-                or col_norm in desired_norm
-                or col_norm.startswith(desired_norm)
-                or desired_norm.startswith(col_norm)
-            )
+        self.editor_vars['subject_code_var'].set(
+            str(self._get_row_value(vals, 'Subject_Code', 'SubjectCode', 'SubCode'))
+        )
 
-        column_index = []
-        for idx, col in enumerate(self.columns):
-            column_index.append((idx, str(col)))
+        self.editor_vars['omr_var'].set(
+            str(self._get_row_value(vals, 'OMR_No', 'OMRNo'))
+        )
 
-        def get_column_value(*column_names):
-            for name in column_names:
-                for idx, col in column_index:
-                    if column_matches(col, name) and idx < len(vals):
-                        return safe_value(vals, idx)
-            return ''
+        self.editor_vars['regno_var'].set(
+            str(self._get_row_value(vals, 'Registration_No', 'RegNo', 'RegistrationNo'))
+        )
 
-        self.editor_vars['candsig'].set(boolmap(get_column_value('CanSign', 'CandSigDesc', 'CandSig', 'CandidateSignature')))
-        self.editor_vars['invsig'].set(boolmap(get_column_value('InvSign', 'InvSignDesc', 'InvSigDesc', 'InvigilatorSignature')))
-        self.editor_vars['whitener'].set(boolmap(get_column_value('WhitenerDesc', 'WhitenerApplied')))
-        self.editor_vars['nonstd'].set(boolmap(get_column_value('isBlackDesc', 'NonStandardSheet', 'NonStandard')))
-        self.editor_vars['threshold'].set(boolmap(get_column_value('ThDesc', 'ThresholdDesc', 'Threshold', 'Threshold < 35%')))
+        self.editor_vars['qpvc_var'].set(
+            str(self._get_row_value(vals, 'QPVC', 'QPVCNo'))
+        )
 
-        image_path = self.get_image_path_from_row(vals)
-        if image_path:
-            self.load_image(image_path)
+        def yn(v):
+            return "Yes" if str(v) in (
+                "1",
+                "True",
+                "true"
+            ) else "No"
 
+        self.editor_vars['candsig'].set(
+            yn(self._get_row_value(vals, 'CandSig', 'CanSign'))
+        )
+
+        self.editor_vars['invsig'].set(
+            yn(self._get_row_value(vals, 'InvSig', 'InvSign'))
+        )
+
+        self.load_image(
+            str(self.get_image_path_from_row(vals))
+        )
     def get_image_path_from_row(self, values):
         if not self.columns:
             return ''
@@ -849,37 +1062,64 @@ class CounterFoilDataEdit:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                EXEC usp_CounterFoilEditUpdate
-                     @EditFor=?,
-                     @UserID=?,
-                     @ID=?,
-                     @barcode=?,
-                     @bubble_regno=?,
-                     @handwritten_regno=?,
-                     @subject_code=?,
-                     @BookletSlNo=?,
-                     @CandSig=?,
-                     @InvSign=?,
-                     @WhitenerDesc=?,
-                     @isBlackDesc=?,
-                     @ThDesc=?
+                EXEC usp_NominalRoll2EditUpdate
+                    @EditFor=?,
+                    @UserID=?,
+                    @ID=?,
+                    @CenterCode=?,
+                    @SubCenterCode=?,
+                    @SubCode=?,
+                    @OMRNo=?,
+                    @RegNo=?,
+                    @QPVC=?,
+                    @CandSig=?,
+                    @InvSign=?
                 """,
                 (
                     self.edit_for_var.get(),
+
                     self.user_id,
+
                     record_id,
-                    self.editor_vars['barcode_var'].get(),
-                    self.editor_vars['bubble_var'].get(),
-                    self.editor_vars['hand_var'].get(),
-                    self.editor_vars['subject_code_var'].get(),
-                    self.editor_vars['booklet_var'].get(),
-                    self.yes_no_to_bit(self.editor_vars['candsig'].get()),
-                    self.yes_no_to_bit(self.editor_vars['invsig'].get()),
-                    self.yes_no_to_bit(self.editor_vars['whitener'].get()),
-                    self.yes_no_to_bit(self.editor_vars['nonstd'].get()),
-                    self.yes_no_to_bit(self.editor_vars['threshold'].get())
+
+                    self.editor_vars[
+                        'center_code_var'
+                    ].get(),
+
+                    self.editor_vars[
+                        'subcenter_var'
+                    ].get(),
+
+                    self.editor_vars[
+                        'subject_code_var'
+                    ].get(),
+
+                    self.editor_vars[
+                        'omr_var'
+                    ].get(),
+
+                    self.editor_vars[
+                        'regno_var'
+                    ].get(),
+
+                    self.editor_vars[
+                        'qpvc_var'
+                    ].get(),
+
+                    self.yes_no_to_bit(
+                        self.editor_vars[
+                            'candsig'
+                        ].get()
+                    ),
+
+                    self.yes_no_to_bit(
+                        self.editor_vars[
+                            'invsig'
+                        ].get()
+                    )
                 )
             )
+            
             conn.commit()
             cursor.close()
             conn.close()
@@ -887,7 +1127,7 @@ class CounterFoilDataEdit:
             self.load_data()
             self.select_next_row_after_update(record_id)
         except Exception as ex:
-            self.log_error('CounterFoilDataEdit', 'Update', ex)
+            self.log_error('NominalRoll2DataEdit', 'Update', ex)
             self.message_var.set(str(ex))
 
     def select_next_row_after_update(self, updated_id):
@@ -932,20 +1172,25 @@ class CounterFoilDataEdit:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                EXEC usp_CounterFoilEditSkip
-                     @EditFor=?,
-                     @UserID=?,
-                     @ID=?
+                EXEC usp_NominalRoll2EditSkip
+                    @EditFor=?,
+                    @UserID=?,
+                    @ID=?
                 """,
-                (self.edit_for_var.get(), self.user_id, record_id)
+                (
+                    self.edit_for_var.get(),
+                    self.user_id,
+                    record_id
+                )
             )
+            
             conn.commit()
             cursor.close()
             conn.close()
             self.message_var.set('Record skipped successfully.')
             self.load_data()
         except Exception as ex:
-            self.log_error('CounterFoilDataEdit', 'Skip', ex)
+            self.log_error('NominalRoll2DataEdit', 'Skip', ex)
             self.message_var.set(str(ex))
 
     def goto_row(self):
@@ -1005,6 +1250,16 @@ class CounterFoilDataEdit:
 
 
 if __name__ == '__main__':
-    root = tk.Tk()
-    app = CounterFoilDataEdit(root, 1)
-    root.mainloop()
+    try:
+        root = tk.Tk()
+    except KeyboardInterrupt:
+        raise SystemExit(0)
+    except tk.TclError as ex:
+        print(f'Unable to start the GUI window: {ex}')
+        raise SystemExit(1)
+
+    try:
+        app = NominalRoll2DataEdit(root, 1)
+        root.mainloop()
+    except KeyboardInterrupt:
+        print('Application closed.')

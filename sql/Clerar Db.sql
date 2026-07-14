@@ -1,12 +1,15 @@
 Select * from [dbo].[omr_results] where whitenerflag=1
 
-Select * from [dbo].[CounterFoilEditedData]
-Select * from [dbo].[CounterFoilEditedDataLog]
+Select * from [dbo].[CounterFoilData]
+Select * from [dbo].[CounterFoilDataEditLog]
 Select * from [dbo].[attendance_sheet_data_1]
 Select * from [dbo].[attendance_sheet_data2]
+Select * from [dbo].[NominalRoll1]
+Select * from [dbo].[NominalRoll1EditLog]
+Select * from [dbo].[ErrorLog]
+Select ID, ReportFor, ReportName, ProcedureName from [dbo].[ExportReport]
 --whitenerflag, bubble_Th_status
-
-
+('42S02', "[42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid object name 'CounterFoilDataEdit'. (208) (SQLExecDirectW)")
 
 ------------------- DB Clear Query
 Truncate table [dbo].[omr_results]

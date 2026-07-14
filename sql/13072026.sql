@@ -184,7 +184,7 @@ BEGIN
 				O.[discrepancy_detail], O.[candidate_signed], O.[invigilator_signed],O.[subject_code], O.[BookletSlNo],
 				 O.[created_at], O.[omr_threshold], O.[whitenerflag],O.[isblack],O.[bubble_Th_status],
 				iif(Replace(O.[barcode],' ','')='','1',0) BarcodeDesc, iif(len(Replace(O.[bubble_regno],' ',''))<9,'1',0) OMRRegNoDesc, iif(len(Replace(O.[handwritten_regno],' ',''))<9,'1',0) ICRRegNoDesc,
-				O.[candidate_signed] CandSigDesc, O.[invigilator_signed] InvSignDesc, iif(len(Replace(O.[subject_code],' ',''))<3,'1',0) SubCodeDesc, iif(len(Replace(O.[BookletSlNo],' ',''))<7,'1',0) BSlNoDesc,
+				iif(O.[candidate_signed]=1 ,0,1) CandSignDesc,iif(O.[invigilator_signed]=1 ,0,1)  InvSignDesc, iif(len(Replace(O.[subject_code],' ',''))<3,'1',0) SubCodeDesc, iif(len(Replace(O.[BookletSlNo],' ',''))<7,'1',0) BSlNoDesc,
 				O.[whitenerflag] whitenerDesc, O.[isblack] isBlackDesc, O.[bubble_Th_status] ThDesc, Getdate(),@UserID  
 			from [dbo].[omr_results] O Left join CounterFoilData D on O.id = D.id
 			where D.ID is Null
@@ -238,7 +238,7 @@ BEGIN
 			,A.[subcenter_code],A.[subject_code],A.[invigilator_signed],A.[row_number]
 			,A.[status],A.[signature_present],A.[registration_no],A.[qcab_serial_no]
 			,iif(len(Replace(A.[center_code],' ',''))<1,1,0) CenterCodeDesc,iif(len(Replace(A.[subcenter_code],' ',''))<1,1,0) [SubCenterCodeDesc],iif(len(Replace(A.[subject_code],' ',''))<3,1,0) [SubDesc]
-			,iif(len(Replace(A.[status],' ',''))<1,1,0) StatusDesc, A.[signature_present] CandSignDesc,A.[invigilator_signed] [InvSignDesc]
+			,iif(len(Replace(A.[status],' ',''))<1,1,0) StatusDesc, iif(A.[signature_present]=1 ,0,1) CandSignDesc,iif(A.[invigilator_signed]=1 ,0,1) [InvSignDesc]
 			,iif(len(Replace(A.[registration_no],' ',''))<9,1,0) RegNoDesc,iif(len(Replace(A.[qcab_serial_no],' ',''))<7,1,0)  QCABDesc ,getdate() created_at,@UserID CreatedBy 
 			from [dbo].[attendance_sheet_data2] A  Left join [dbo].[NominalRoll2] N 
 			on A.ID=N.ID where N.id is null
@@ -436,8 +436,8 @@ Begin
 	else if @EditFor ='Roll No discrepancy'
 	begin
 		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
-			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig, 
-			 FinalDesc FinalStatus from NominalRoll1  where [RegNoDesc]=1 and ID >= @FromID and ID <= @ToID 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig,[Status] 
+			 ,FinalDesc FinalStatus from NominalRoll1  where [RegNoDesc]=1 and ID >= @FromID and ID <= @ToID 
 	end
 	else if @EditFor ='QBVC discrepancy'
 	begin
@@ -486,7 +486,7 @@ Begin
 	if @EditFor ='Full Data'
 	begin
 	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
-			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, 
+			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, [Status],
 			 FinalDesc FinalStatus from NominalRoll2 where ID >= @FromID and ID <= @ToID--where FinalDesc =1
 				 --WhitenerDesc WhitenerApplied, ThDesc [Threshold < 35%], --where FinalDesc =1
 	end
@@ -524,7 +524,7 @@ Begin
 	begin
 		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
 			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] [Candidate Signed], [Invigilator_Signed], 
-			 FinalDesc FinalStatus from NominalRoll2  where [QCABDesc]=1 and ID >= @FromID and ID <= @ToID
+			 FinalDesc FinalStatus from NominalRoll2  where [Q]=1 and ID >= @FromID and ID <= @ToID
 	end
 	else if @EditFor ='Roll No discrepancy'
 	begin
@@ -989,11 +989,390 @@ begin
 end
 
 
-usp_CounterFoilEditFor
-usp_LoadCounterfoilEditGrid @EditFor, @UserID
-usp_CounterFoilEditSkip @EditFor, @UserID
-usp_CounterFoilEditUpdate @EditFor, @UserID, @ID, @barcode,@bubble_regno,@handwritten_regno,@subject_code,@BookletSlNo,@CandSig, @InvSign, @WhitenerDesc, @isBlackDesc, @ThDesc
+go
 
-Create usp_LoadCounterfoilEditGrid @EditFor, @UserID
+/*
+Nominal Roll 1 (Descriptive Test)	Center Code discrepancy
+Nominal Roll 1 (Descriptive Test)	Sub Center Code discrepancy
+Nominal Roll 1 (Descriptive Test)	Subject Code discrepancy
+Nominal Roll 1 (Descriptive Test)	Roll No discrepancy
+Nominal Roll 1 (Descriptive Test)	OMR No discrepancy
+Nominal Roll 1 (Descriptive Test)	QBVC discrepancy
+Nominal Roll 2 (OMR Test)	Not signed by candidate in Nominal Roll 2 discrepancy
+Nominal Roll 2 (OMR Test)	Not signed by Invigilator in Nominal Roll 2 discrepancy
+Nominal Roll 2 (OMR Test)	Center Code discrepancy
+Nominal Roll 2 (OMR Test)	Sub Center Code discrepancy
+Nominal Roll 2 (OMR Test)	Subject Code discrepancy
+Nominal Roll 2 (OMR Test)	Roll No discrepancy
+Nominal Roll 2 (OMR Test)	OMR No discrepancy
+*/
+--SP_helptext NominalRoll1_inv_Sign_Desc
+  
+CREATE or Alter PROCEDURE [dbo].[NominalRoll1_CenterCode_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig,[Status], 
+			 FinalDesc FinalStatus from NominalRoll1 where CenterCodeDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll1_SubCenterCode_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig,[Status], 
+			 FinalDesc FinalStatus from NominalRoll1 where SubCenterCodeDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll1_SubjectCode_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig,[Status], 
+			 FinalDesc FinalStatus from NominalRoll1 where SubDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll1_OMRNo_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig,[Status], 
+			 FinalDesc FinalStatus from NominalRoll1 where OMRDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll1_RegNo_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig,[Status], 
+			 FinalDesc FinalStatus from NominalRoll1 where RegNoDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll1_QPVC_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig,[Status], 
+			 FinalDesc FinalStatus from NominalRoll1 where QPVCDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll1_Status_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig,[Status], 
+			 FinalDesc FinalStatus from NominalRoll1 where StatusDesc =1 
+end
 
-SlNo, ID, [filename], [barcode], [bubble_regno], [handwritten_regno], [subject_code], [BookletSlNo],  OMRRegNoDesc, ICRRegNoDesc, CandSigDesc, InvSignDesc, SubCodeDesc, BSlNoDesc,  WhitenerDesc [WhitenerApplied], isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%]
+CREATE or Alter PROCEDURE [dbo].[NominalRoll1_CandSign_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig,[Status], 
+			 FinalDesc FinalStatus from NominalRoll1 where CandSignDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll1_InvSign_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], OMR_No,[Registration_No] ,[qpvc], [signature_present] CandSig, [Invigilator_Signed] InvSig,[Status], 
+			 FinalDesc FinalStatus from NominalRoll1 where InvSignDesc =1 
+end
+go
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll2_SubjectCode_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, [Status],
+			 FinalDesc FinalStatus from NominalRoll2 where SubDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll2_CenterCode_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, [Status],
+			 FinalDesc FinalStatus from NominalRoll2 where CenterCodeDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll2_SubCenterCode_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, [Status],
+			 FinalDesc FinalStatus from NominalRoll2 where SubCenterCodeDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll2_QCAB_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, [Status],
+			 FinalDesc FinalStatus from NominalRoll2 where QCABDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll2_RegNo_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, [Status],
+			 FinalDesc FinalStatus from NominalRoll2 where RegNoDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll2_CandSign_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, [Status],
+			 FinalDesc FinalStatus from NominalRoll2 where CandSignDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll2_InvSign_Desc]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, [Status],
+			 FinalDesc FinalStatus from NominalRoll2 where InvSignDesc =1 
+end
+go
+-----------
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll2_FinalData]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[Filename], Center_Code, Subcenter_Code, 
+			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, [Status]
+			 ,iif(len(Replace([center_code],' ',''))<1,1,0) CenterCodeDesc,iif(len(Replace([subcenter_code],' ',''))<1,1,0) [SubCenterCodeDesc],iif(len(Replace([subject_code],' ',''))<3,1,0) [SubDesc]
+			,iif(len(Replace([status],' ',''))<1,1,0) StatusDesc, iif([signature_present]=1 ,0,1) CandSignDesc,iif([invigilator_signed]=1 ,0,1) [InvSignDesc]
+			,iif(len(Replace([registration_no],' ',''))<9,1,0) RegNoDesc,iif(len(Replace([qcab_serial_no],' ',''))<7,1,0)  QCABDesc
+			,FinalDesc FinalStatus,[created_at] ScannedOn from NominalRoll2 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRoll1_FinalData]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Filename],[Row_number],[Center_Code]
+			,[Subcenter_Code],[Subject_Code],[Invigilator_signed]
+			,[Status],[Signature_present],[OMR_No],[Registration_No],[QPVC]
+			,iif(len(Replace([center_code],' ',''))<1,1,0) CenterCodeDesc,iif(len(Replace([subcenter_code],' ',''))<1,1,0) [SubCenterCodeDesc],iif(len(Replace([subject_code],' ',''))<3,1,0) [SubjectDesc]
+			,iif(len(Replace([status],' ',''))<1,1,0) StatusDesc, iif([signature_present]=1 ,0,1) CandSignDesc,iif([invigilator_signed]=1 ,0,1)  [InvSignDesc],iif(len(Replace([omr_no],' ',''))<7,'1',0) OMRNoDesc
+			,iif(len(Replace([registration_no],' ',''))<9,'1',0) RegNoDesc ,iif(len(Replace([qpvc],' ',''))<1,1,0)  QPVCDesc
+			,FinalDesc FinalStatus,[created_at] ScannedOn from NominalRoll1 where StatusDesc =1 
+end
+go
+CREATE or Alter PROCEDURE [dbo].[CounterFoil_FinalData]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+  
+    -- Insert statements for procedure here  
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Filename], [Barcode], [Bubble_Regno],[Handwritten_Regno], 
+		[Candidate_Signed], [Invigilator_Signed],[Subject_Code], [BookletSlNo],[WhitenerFlag],
+		iif(Replace([barcode],' ','')='','1',0) BarcodeDesc, iif(len(Replace([bubble_regno],' ',''))<9,'1',0) OMRRegNoDesc, iif(len(Replace([handwritten_regno],' ',''))<9,'1',0) ICRRegNoDesc,
+		iif([candidate_signed]=1 ,0,1) CandSignDesc,iif([invigilator_signed]=1 ,0,1)  InvSignDesc, iif(len(Replace([subject_code],' ',''))<3,'1',0) SubCodeDesc, iif(len(Replace([BookletSlNo],' ',''))<7,'1',0) BSlNoDesc,
+		[whitenerflag] WhitenerDesc, [isblack] NonStandardSheet, [bubble_Th_status] [Threshold<35%], 
+		FinalDesc FinalStatus,[created_at] ScannedOn from CounterFoilData  
+end
+
+go
+CREATE or Alter PROCEDURE [dbo].[CounterFoil_DiscCountSummary]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+      -- Insert statements for procedure here 
+	  Select Distinct M.Subject_Code,Barcode.BarcodeDesc,OMR.OMRRegNoDesc,ICR.ICRRegNoDesc,BSlNo.BSlNoDesc,CandSig.NoCandSig,InvSign.NoInvSign,Whitener.WhitenerApplied,Black.NonStandardSheet,Th.[Threshold<35%]  from CounterFoilData M Left Join 
+	  (Select Subject_Code,Count('A') BarcodeDesc  from CounterFoilData where BarcodeDesc = 1 group by subject_code) Barcode 
+	  on M.subject_code = Barcode.subject_code left Join
+	  (Select Subject_Code,Count('A') OMRRegNoDesc  from CounterFoilData where OMRRegNoDesc = 1 group by subject_code) OMR 
+	  on M.subject_code = OMR.subject_code left Join
+	  (Select Subject_Code,Count('A') ICRRegNoDesc  from CounterFoilData where ICRRegNoDesc = 1 group by subject_code) ICR 
+	  on M.subject_code = ICR.subject_code left Join
+	  (Select Subject_Code,Count('A') BSlNoDesc  from CounterFoilData where BSlNoDesc = 1 group by subject_code) BSLNo 
+	  on M.subject_code = BSlNo.subject_code left Join
+	  (Select Subject_Code,Count('A') NoCandSig  from CounterFoilData where CandSigDesc = 1 group by subject_code) CandSig 
+	  on M.subject_code = CandSig.subject_code left Join
+	  (Select Subject_Code,Count('A') NoInvSign  from CounterFoilData where InvSignDesc = 1 group by subject_code) InvSign 
+	  on M.subject_code = InvSign.subject_code left Join
+	  (Select Subject_Code,Count('A') WhitenerApplied  from CounterFoilData where WhitenerDesc = 1 group by subject_code) Whitener 
+	  on M.subject_code = Whitener.subject_code left Join
+	  (Select Subject_Code,Count('A') [NonStandardSheet]  from CounterFoilData where isBlackDesc = 1 group by subject_code) Black 
+	  on M.subject_code = Black.subject_code left Join
+	  (Select Subject_Code,Count('A') [Threshold<35%]   from CounterFoilData where ThDesc = 1 group by subject_code) Th 
+	  on M.subject_code = Th.subject_code 
+
+ 
+end
+go
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRol1_DiscCountSummary]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+      -- Insert statements for procedure here 
+	  Select Distinct M.Subject_Code,Center.CenterCodeDesc,SubCenter.SubCenterCodeDesc,OMR.OMRNoDesc,RegNo.RegNoDesc,CandSig.NoCandSig,InvSign.NoInvSign  from NominalRoll1 M Left Join 
+	  (Select Subject_Code,Count('A') CenterCodeDesc  from NominalRoll1 where CenterCodeDesc = 1 group by subject_code) Center 
+	  on M.subject_code = Center.subject_code left Join
+	  (Select Subject_Code,Count('A') SubCenterCodeDesc  from NominalRoll1 where SubCenterCodeDesc = 1 group by subject_code) SubCenter 
+	  on M.subject_code = SubCenter.subject_code left Join
+	  (Select Subject_Code,Count('A') OMRNoDesc  from NominalRoll1 where OMRDesc = 1 group by subject_code) OMR 
+	  on M.subject_code = OMR.subject_code left Join
+	  (Select Subject_Code,Count('A') RegNoDesc  from NominalRoll1 where RegNoDesc = 1 group by subject_code) RegNo 
+	  on M.subject_code = RegNo.subject_code left Join
+	  (Select Subject_Code,Count('A') NoCandSig  from NominalRoll1 where CandSignDesc = 1 group by subject_code) CandSig 
+	  on M.subject_code = CandSig.subject_code left Join
+	  (Select Subject_Code,Count('A') NoInvSign  from NominalRoll1 where InvSignDesc = 1 group by subject_code) InvSign 
+	  on M.subject_code = InvSign.subject_code 
+	   
+end
+go
+CREATE or Alter PROCEDURE [dbo].[NominalRol2_DiscCountSummary]  
+ -- Add the parameters for the stored procedure here  
+AS  
+BEGIN  
+ -- SET NOCOUNT ON added to prevent extra result sets from  
+ -- interfering with SELECT statements.  
+ SET NOCOUNT ON;  
+      -- Insert statements for procedure here 
+	  Select Distinct M.Subject_Code,Center.CenterCodeDesc,SubCenter.SubCenterCodeDesc,RegNo.RegNoDesc,QCAB.QCABDesc,CandSig.NoCandSig,InvSign.NoInvSign  from NominalRoll2 M Left Join 
+	  (Select Subject_Code,Count('A') CenterCodeDesc  from NominalRoll2 where CenterCodeDesc = 1 group by subject_code) Center 
+	  on M.subject_code = Center.subject_code left Join
+	  (Select Subject_Code,Count('A') SubCenterCodeDesc  from NominalRoll2 where SubCenterCodeDesc = 1 group by subject_code) SubCenter 
+	  on M.subject_code = SubCenter.subject_code left Join
+	  (Select Subject_Code,Count('A') QCABDesc  from NominalRoll2 where QCABDesc = 1 group by subject_code) QCAB 
+	  on M.subject_code = QCAB.subject_code left Join
+	  (Select Subject_Code,Count('A') RegNoDesc  from NominalRoll2 where RegNoDesc = 1 group by subject_code) RegNo 
+	  on M.subject_code = RegNo.subject_code left Join
+	  (Select Subject_Code,Count('A') NoCandSig  from NominalRoll2 where CandSignDesc = 1 group by subject_code) CandSig 
+	  on M.subject_code = CandSig.subject_code left Join
+	  (Select Subject_Code,Count('A') NoInvSign  from NominalRoll2 where InvSignDesc = 1 group by subject_code) InvSign 
+	  on M.subject_code = InvSign.subject_code 
+	   
+end
+
+--usp_CounterFoilEditFor
+--usp_LoadCounterfoilEditGrid @EditFor, @UserID
+--usp_CounterFoilEditSkip @EditFor, @UserID
+--usp_CounterFoilEditUpdate @EditFor, @UserID, @ID, @barcode,@bubble_regno,@handwritten_regno,@subject_code,@BookletSlNo,@CandSig, @InvSign, @WhitenerDesc, @isBlackDesc, @ThDesc
+
+--Create usp_LoadCounterfoilEditGrid @EditFor, @UserID
+
+--SlNo, ID, [filename], [barcode], [bubble_regno], [handwritten_regno], [subject_code], [BookletSlNo],  OMRRegNoDesc, ICRRegNoDesc, CandSigDesc, InvSignDesc, SubCodeDesc, BSlNoDesc,  WhitenerDesc [WhitenerApplied], isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%]

@@ -9,11 +9,13 @@ import db_credentials
 class DiscrepancyReports:
 
     def __init__(self, root):
-
+        
         self.root = root
         self.root.title("Download Discrepancy Reports")
         self.root.geometry("1200x700")
-
+        self.root.resizable(True, True)
+        self.root.minsize(800, 600)
+        
         self.report_data = {}
 
         self.create_ui()

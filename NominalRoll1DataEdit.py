@@ -46,8 +46,22 @@ class NominalRoll1DataEdit:
         self.wire_buttons()
 
     def create_controls(self):
+
+        body = tk.Frame(self.root)
+        body.pack(fill='both', expand=True)
+
+        # Left Side
+        left_frame = tk.Frame(body, width=650)
+        left_frame.pack(side='left', fill='both', expand=False)
+        left_frame.pack_propagate(False)
+
+        # Right Side
+        right_container = tk.Frame(body)
+        right_container.pack(side='right', fill='both', expand=True)
+
+        # Header ONLY for image area
         lbl_header = tk.Label(
-            self.root,
+            right_container,
             text='Nominal Roll 1 (Descriptive Test) Data Edit',
             font=('Segoe UI', 16, 'bold'),
             bg='#0D47A1',
@@ -55,22 +69,27 @@ class NominalRoll1DataEdit:
             padx=10,
             pady=8
         )
-        lbl_header.pack(fill='x', pady=5)
+        lbl_header.pack(fill='x')
 
-        body = tk.Frame(self.root)
-        body.pack(fill='both', expand=True)
+        # Full image panel
+        right_frame = tk.LabelFrame(
+            right_container,
+            text='Full Image'
+        )
+        right_frame.pack(
+            fill='both',
+            expand=True,
+            padx=5,
+            pady=0
+        )
 
-        left_frame = tk.Frame(body, width=650)
-        left_frame.pack(side='left', fill='both', expand=False)
-        left_frame.pack_propagate(False)
-
-        right_frame = tk.LabelFrame(body, text='Full Image')
-        right_frame.pack(side='right', fill='both', expand=True, padx=5, pady=0)
-
+        # LEFT PANELS
         self.create_filter_panel(left_frame)
         self.create_grid_panel(left_frame)
         self.create_edit_panel(left_frame)
         self.create_button_panel(left_frame)
+
+        # RIGHT PANEL
         self.create_image_panel(right_frame)
 
     def create_filter_panel(self, parent):
@@ -492,10 +511,11 @@ class NominalRoll1DataEdit:
         crop_image = self.get_focus_crop_image(field_name)
         self.display_focus_crop(crop_image)
 
+
     def get_focus_crop_image(self, field_name):
         if self.current_image is None:
             return None
-
+        row_no = getattr(self, "current_row_no", 1)
         img = self.current_image.convert('RGB')
         w, h = img.size
         target_w = 1654
@@ -504,68 +524,92 @@ class NominalRoll1DataEdit:
         scale_y = h / target_h if target_h else 1.0
 
         try:
+            #if self._get_row_value(vals, "Row_Number", "RowNo", "Row Number") == 1:
             if field_name == 'center_code_var':
-                x1 = int(w * 0.04)
-                x2 = int(w * 0.30)
-                y1 = int(h * 0.03)
-                y2 = int(h * 0.12)
+                x1 = int(w * 0.05)
+                x2 = int(w * 0.35)
+                y1 = int(h * 0.12)
+                y2 = int(h * 0.14)
             elif field_name == 'subcenter_var':
-                x1 = int(w * 0.30)
-                x2 = int(w * 0.48)
-                y1 = int(h * 0.03)
-                y2 = int(h * 0.12)
+                x1 = int(w * 0.05)
+                x2 = int(w * 0.35)
+                y1 = int(h * 0.13)
+                y2 = int(h * 0.17)
             elif field_name == 'subject_code_var':
-                x1 = int(w * 0.04)
-                x2 = int(w * 0.34)
-                y1 = int(h * 0.12)
-                y2 = int(h * 0.20)
-            elif field_name == 'omr_var':
-                x1 = int(w * 0.28)
-                x2 = int(w * 0.54)
-                y1 = int(h * 0.12)
-                y2 = int(h * 0.20)
+                x1 = int(w * 0.53)
+                x2 = int(w * 0.80)
+                y1 = int(h * 0.13)
+                y2 = int(h * 0.17)
+            elif field_name == 'omr_var':               
+                if row_no == 1:
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.23), int(h*0.28)
+                elif row_no == 2:
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.32), int(h*0.38)
+                elif row_no == 3:
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.42), int(h*0.48)
+                elif row_no == 4:
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.52), int(h*0.58)
+                elif row_no == 5:
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.62), int(h*0.68)
+                elif row_no == 6:
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.72), int(h*0.78)
+                else:
+                     return None
             elif field_name == 'regno_var':
-                x1 = int(w * 0.54)
-                x2 = int(w * 0.78)
-                y1 = int(h * 0.12)
-                y2 = int(h * 0.20)
+                if row_no == 1:
+                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.23), int(h*0.28)
+                elif row_no == 2:
+                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.32), int(h*0.38)
+                elif row_no == 3:
+                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.42), int(h*0.48)
+                elif row_no == 4:
+                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.52), int(h*0.58)
+                elif row_no == 5:
+                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.62), int(h*0.68)
+                elif row_no == 6:
+                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.72), int(h*0.78)
+                else:
+                     return None
             elif field_name == 'qpvc_var':
-                x1 = int(w * 0.78)
-                x2 = int(w * 0.98)
-                y1 = int(h * 0.12)
-                y2 = int(h * 0.20)
-            elif field_name == 'booklet_var':
-                x1 = int(w * 0.62)
-                x2 = int(w * 0.95)
-                y1 = int(h * 0.68)
-                y2 = int(h * 0.78)
-            elif field_name == 'barcode_var':
-                x1 = int(w * 0.55)
-                x2 = w
-                y1 = int(h * 0.03)
-                y2 = int(h * 0.18)
-            elif field_name == 'bubble_var':
-                x1 = int(w * 0.55)
-                x2 = w
-                y1 = int(h * 0.30)
-                y2 = int(h * 0.64)
-            elif field_name == 'hand_var':
-                x1 = int(w * 0.55)
-                x2 = w
-                y1 = int(h * 0.30)
-                y2 = int(h * 0.40)
+                if row_no == 1:
+                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.23), int(h*0.28)
+                elif row_no == 2:
+                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.32), int(h*0.38)
+                elif row_no == 3:
+                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.42), int(h*0.48)
+                elif row_no == 4:
+                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.52), int(h*0.58)
+                elif row_no == 5:
+                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.62), int(h*0.68)
+                elif row_no == 6:
+                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.72), int(h*0.78)
+                else:
+                     return None
             elif field_name == 'candsig':
-                x1 = int(w * 0.04)
-                x2 = int(w * 0.58)
-                y1 = int(h * 0.34)
-                y2 = int(h * 0.45)
+                if row_no == 1:
+                    x1, x2, y1, y2 = int(w*0.18), int(w*0.48), int(h*0.27), int(h*0.32)
+                elif row_no == 2:
+                    x1, x2, y1, y2 = int(w*0.18), int(w*0.48), int(h*0.37), int(h*0.42)
+                elif row_no == 3:
+                    x1, x2, y1, y2 = int(w*0.18), int(w*0.48), int(h*0.46), int(h*0.52)
+                elif row_no == 4:
+                    x1, x2, y1, y2 = int(w*0.18), int(w*0.48), int(h*0.56), int(h*0.62)
+                elif row_no == 5:
+                    x1, x2, y1, y2 = int(w*0.18), int(w*0.48), int(h*0.66), int(h*0.72)
+                elif row_no == 6:
+                    x1, x2, y1, y2 = int(w*0.18), int(w*0.48), int(h*0.76), int(h*0.82)
+                else:
+                     return None
             elif field_name == 'invsig':
-                x1 = int(w * 0.04)
-                x2 = int(w * 0.58)
-                y1 = int(h * 0.50)
-                y2 = int(h * 0.60)
+                x1 = int(w * 0.10)
+                x2 = int(w * 0.40)
+                y1 = int(h * 0.90)
+                y2 = int(h * 0.95)
             else:
                 return None
+            #elif self._get_row_value(vals, "Row_Number", "RowNo", "Row Number") == 2:
+                
+            
 
             x1 = max(0, min(w, x1))
             y1 = max(0, min(h, y1))
@@ -619,14 +663,54 @@ class NominalRoll1DataEdit:
         ttk.Button(toolbar, text='+', command=self.zoom_in).pack(side='left')
         ttk.Button(toolbar, text='-', command=self.zoom_out).pack(side='left')
 
-        self.canvas = tk.Canvas(parent, bg='gray')
-        self.canvas.pack(fill='both', expand=True)
+        #self.canvas = tk.Canvas(parent, bg='gray')
+        #self.canvas.pack(fill='both', expand=True)
 
-        hscroll = ttk.Scrollbar(parent, orient='horizontal', command=self.canvas.xview)
-        vscroll = ttk.Scrollbar(parent, orient='vertical', command=self.canvas.yview)
-        self.canvas.configure(xscrollcommand=hscroll.set, yscrollcommand=vscroll.set)
+        #hscroll = ttk.Scrollbar(parent, orient='horizontal', command=self.canvas.xview)
+        #vscroll = ttk.Scrollbar(parent, orient='vertical', command=self.canvas.yview)
+        #self.canvas.configure(xscrollcommand=hscroll.set, yscrollcommand=vscroll.set)
+        #hscroll.pack(fill='x')
+        #vscroll.pack(side='right', fill='y')
+        image_frame = tk.Frame(parent)
+        image_frame.pack(fill='both', expand=True)
+
+        self.canvas = tk.Canvas(
+            image_frame,
+            bg='gray'
+        )
+
+        vscroll = ttk.Scrollbar(
+            image_frame,
+            orient='vertical',
+            command=self.canvas.yview
+        )
+
+        self.canvas.configure(
+            yscrollcommand=vscroll.set
+        )
+
+        self.canvas.pack(
+            side='left',
+            fill='both',
+            expand=True
+        )
+
+        vscroll.pack(
+            side='right',
+            fill='y'
+        )
+
+        hscroll = ttk.Scrollbar(
+            parent,
+            orient='horizontal',
+            command=self.canvas.xview
+        )
+
+        self.canvas.configure(
+            xscrollcommand=hscroll.set
+        )
+
         hscroll.pack(fill='x')
-        vscroll.pack(side='right', fill='y')
         self.canvas.bind('<MouseWheel>', self.mouse_zoom)
 
         # Status message shown below the full image area.
@@ -801,6 +885,15 @@ class NominalRoll1DataEdit:
         self.lbl_row_number.config(
             text=f'Row No : {self._get_row_value(vals, "Row_Number", "RowNo", "Row Number")}'
         )
+        
+        row_no = self._get_row_value(
+            vals,
+            "Row_Number",
+            "RowNo",
+            "Row Number"
+        )
+
+        self.current_row_no = int(row_no)
 
         self.editor_vars['center_code_var'].set(
             str(self._get_row_value(vals, 'Center_Code', 'CenterCode'))

@@ -982,7 +982,11 @@ class MainApplication:
                 return
 
         win = tk.Toplevel(self.root)
-        win.transient(self.root)
+        #win.transient(self.root)
+        
+        win.resizable(True, True)
+        win.minsize(800, 600)
+
         import DiscrepancyReports as _dr_mod
         _dr_mod.LOGGED_USER_ID = self.current_user.user_id if self.current_user else 1
         audit.log("application", "module_open",
@@ -1067,6 +1071,14 @@ class MainApplication:
 
         if selection == "Subject Code & Booklet Serial No Discrepancy":
             self.open_subject_booklet_discrepancy()
+            return
+
+        if selection == "Counter Foil Data Edit":
+            self.CounterFoilDataEdit()
+            return
+
+        if selection == "Nominal Roll 1 Data Edit":
+            self.NominalRoll1DataEdit()
             return
 
         self.open_pending_discrepancy(selection)
@@ -1350,7 +1362,7 @@ class MainApplication:
             on_success=self._refresh_db_status,
         )
 
-    def _open_module(self, factory: Callable[[tk.Misc], object], title: str) -> None:
+    def _open_module(self, factory: Callable[..., object], title: str, *args: object) -> None:
         if self._open_module_window is not None and self._open_module_window.winfo_exists():
             self._open_module_window.lift()
             self._open_module_window.focus_force()
@@ -1388,7 +1400,7 @@ class MainApplication:
         module_root.minsize(max(1024, int(sw * 0.65)), max(620, int(sh * 0.62)))
         module_root.configure(bg="#1a1a22")
 
-        factory(module_root)
+        factory(module_root, *args)
 
         def on_close() -> None:
             audit.log("application", "module_close", details={"module": title})
@@ -1449,16 +1461,21 @@ class MainApplication:
     def CounterFoilDataEdit(self) -> None:
         from CounterFoilDataEdit import CounterFoilDataEdit
 
+        user_id = self.current_user.user_id if self.current_user is not None else 1
         self._open_module(
             CounterFoilDataEdit,
             "Counter Foil Data Edit",
+            user_id,
         )
+
     def NominalRoll1DataEdit(self) -> None:
         from NominalRoll1DataEdit import NominalRoll1DataEdit
 
+        user_id = self.current_user.user_id if self.current_user is not None else 1
         self._open_module(
             NominalRoll1DataEdit,
             "Nominal Roll 1 (Descriptive Test) Data Edit",
+            user_id,
         )
     def open_pending_discrepancy(self, title: str) -> None:
         # Add future discrepancy module imports here, for example:
