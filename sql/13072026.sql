@@ -1,6 +1,19 @@
 USE [KPSCOMRICRExtractionV2]
 GO
+CREATE TABLE OMRInkDetection
+(
+    ID INT IDENTITY(1,1) PRIMARY KEY,
 
+    FileName VARCHAR(200),
+
+    InkType VARCHAR(30),
+
+    CreatedDate DATETIME
+        DEFAULT GETDATE(),
+
+    AddUserID INT
+)
+select * from OMRInkDetection
 /****** Object:  Table [dbo].[attendance_sheet_data_1]    Script Date: 08/07/2026 02:07 PM ******/
 SET ANSI_NULLS ON
 GO
