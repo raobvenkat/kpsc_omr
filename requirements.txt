@@ -9,6 +9,7 @@ numpy==2.5.0
 opencv-python-headless==4.13.0.92
 Pillow==12.2.0
 easyocr==1.7.2
+six==1.17.0
 torch==2.12.1
 torchvision==0.27.1
 onnxruntime==1.27.0

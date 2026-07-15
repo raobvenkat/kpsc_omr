@@ -21,8 +21,6 @@ import numpy as np
 from PIL import Image, ImageTk
 from pyzbar.pyzbar import decode
 import onnxruntime as ort
-import easyocr
-import torch
 import audit
 
 #import pytesseract
@@ -34,17 +32,11 @@ _READER = None
 def get_ocr_reader():
     global _READER
     if _READER is None:
+        import easyocr
+        import torch
         use_gpu = torch.cuda.is_available()
         _READER = easyocr.Reader(['en'], gpu=use_gpu)
     return _READER
-
-print("CUDA available:", torch.cuda.is_available())
-
-
-if torch.cuda.is_available():
-    print("GPU:", torch.cuda.get_device_name(0))
-else:
-    print("Using CPU")
 
 try:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))

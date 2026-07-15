@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 import sys
+import traceback
+import importlib
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -1406,7 +1408,25 @@ class MainApplication:
         module_root.minsize(max(1024, int(sw * 0.65)), max(620, int(sh * 0.62)))
         module_root.configure(bg="#1a1a22")
 
-        factory(module_root, *args)
+        try:
+            factory(module_root, *args)
+        except Exception as exc:
+            audit.log(
+                "application",
+                "module_open_failed",
+                outcome="failed",
+                details={"module": title, "error": str(exc)},
+            )
+            module_root.destroy()
+            self._open_module_window = None
+            self.root.deiconify()
+            self.root.lift()
+            messagebox.showerror(
+                f"{title} Failed",
+                f"The module could not be opened.\n\n{exc}\n\n{traceback.format_exc()}",
+                parent=self.root,
+            )
+            return
 
         def on_close() -> None:
             audit.log("application", "module_close", details={"module": title})
@@ -1416,6 +1436,35 @@ class MainApplication:
             self.root.lift()
 
         module_root.protocol("WM_DELETE_WINDOW", on_close)
+
+    def _open_module_from_import(
+        self,
+        module_name: str,
+        class_name: str,
+        title: str,
+        *args: object,
+        configure_module: Optional[Callable[[object], None]] = None,
+    ) -> None:
+        try:
+            module = importlib.import_module(module_name)
+            if configure_module is not None:
+                configure_module(module)
+            factory = getattr(module, class_name)
+        except Exception as exc:
+            audit.log(
+                "application",
+                "module_import_failed",
+                outcome="failed",
+                details={"module": module_name, "error": str(exc)},
+            )
+            messagebox.showerror(
+                f"{title} Failed",
+                f"The module could not be loaded.\n\n{exc}\n\n{traceback.format_exc()}",
+                parent=self.root,
+            )
+            return
+
+        self._open_module(factory, title, *args)
 
     def _open_reports(self) -> None:
         try:
@@ -1449,67 +1498,69 @@ class MainApplication:
         win.protocol("WM_DELETE_WINDOW", _on_close)
 
     def open_omr_module(self) -> None:
-        from CounterFoilScanning import VisualOMRViewerDemo
-
-        self._open_module(
-            VisualOMRViewerDemo,
+        self._open_module_from_import(
+            "CounterFoilScanning",
+            "VisualOMRViewerDemo",
             "Counterfoil Extraction Engine",
         )
 
-    def open_attendance_module(self) -> None:
-        from NominalRolls import AttendanceViewerDemo
+    def open_subject_booklet_discrepancy(self) -> None:
+        user_id = self.current_user.user_id if self.current_user else 1
+        self._open_module_from_import(
+            "CounterFoilSubBSNoEdit",
+            "SubjectBookletDiscrepancy",
+            "Subject Code & Booklet Serial No Discrepancy",
+            configure_module=lambda module: setattr(module, "LOGGED_USER_ID", user_id),
+        )
 
-        self._open_module(
-            AttendanceViewerDemo,
+    def open_attendance_module(self) -> None:
+        self._open_module_from_import(
+            "NominalRolls",
+            "AttendanceViewerDemo",
             "Nominal Roll Extraction",
         )
 
     def open_omr_ink_detection(self) -> None:
-        from OMRInkDetection import OMRInkDetection
-
         user_id = self.current_user.user_id if self.current_user is not None else 1
-        self._open_module(
-            OMRInkDetection,
+        self._open_module_from_import(
+            "OMRInkDetection",
+            "OMRInkDetection",
             "OMR Ink Detection",
             user_id,
         )
 
     def CounterFoilDataEdit(self) -> None:
-        from CounterFoilDataEdit import CounterFoilDataEdit
-
         user_id = self.current_user.user_id if self.current_user is not None else 1
-        self._open_module(
-            CounterFoilDataEdit,
+        self._open_module_from_import(
+            "CounterFoilDataEdit",
+            "CounterFoilDataEdit",
             "Counter Foil Data Edit",
             user_id,
         )
 
     def NominalRoll1DataEdit(self) -> None:
-        from NominalRoll1DataEdit import NominalRoll1DataEdit
-
         user_id = self.current_user.user_id if self.current_user is not None else 1
-        self._open_module(
-            NominalRoll1DataEdit,
+        self._open_module_from_import(
+            "NominalRoll1DataEdit",
+            "NominalRoll1DataEdit",
             "Nominal Roll 1 Data Edit",
             user_id,
         )
 
     def NominalRoll2DataEdit(self) -> None:
-        from NominalRoll2DataEdit import NominalRoll2DataEdit
-
         user_id = self.current_user.user_id if self.current_user is not None else 1
-        self._open_module(
-            NominalRoll2DataEdit,
+        self._open_module_from_import(
+            "NominalRoll2DataEdit",
+            "NominalRoll2DataEdit",
             "Nominal Roll 2 Data Edit",
             user_id,
         )
 
     def ink_detection(self) -> None:
-        from ink_detection import  ink_detection
-
         user_id = self.current_user.user_id if self.current_user is not None else 1
-        self._open_module(
-            ink_detection,
+        self._open_module_from_import(
+            "ink_detection",
+            "ink_detection",
             "Ink Detection",
             user_id,
         )
@@ -1523,11 +1574,10 @@ class MainApplication:
             parent=self.root,
         )
     def CounterFoilDataEdit(self) -> None:
-        from CounterFoilDataEdit import CounterFoilDataEdit
-
         user_id = self.current_user.user_id if self.current_user is not None else 1
-        self._open_module(
-            CounterFoilDataEdit,
+        self._open_module_from_import(
+            "CounterFoilDataEdit",
+            "CounterFoilDataEdit",
             "Counter Foil Data Edit",
             user_id,
         )

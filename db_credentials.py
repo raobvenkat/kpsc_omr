@@ -90,15 +90,8 @@ else:
 #    return os.path.join(appdata, "KPSC_OMR")
 
 def get_config_dir() -> str:
-
-    try:
-        app_dir = os.path.dirname(
-            os.path.abspath(__file__)
-        )
-    except Exception:
-        app_dir = os.getcwd()
-
-    return app_dir
+    appdata = os.environ.get("APPDATA") or os.path.expanduser("~")
+    return os.path.join(appdata, "KPSC_OMR")
 
 
 def get_config_path() -> str:
