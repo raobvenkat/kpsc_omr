@@ -29,7 +29,7 @@ def get_ocr_reader():
 class AttendanceViewerDemo:
     def __init__(self, root):
         self.root = root
-        self.root.title("Attendance Sheet Extraction Demo")
+        self.root.title("Nominal Roll Extraction")
 
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()

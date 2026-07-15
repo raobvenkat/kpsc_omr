@@ -385,10 +385,15 @@ class OMRInkDetection:
                     filepath
                 )
 
+                
+              
+                full_file_path = filepath
+
                 rec_id = self.save_result(
-                    filename,
+                    full_file_path,
                     ink_type
                 )
+
 
                 self.grid.insert(
                     "",
@@ -419,3 +424,17 @@ class OMRInkDetection:
         self.message_var.set(
             f"{processed} files processed and imported successfully."
         )
+if __name__ == '__main__':
+    try:
+        root = tk.Tk()
+    except KeyboardInterrupt:
+        raise SystemExit(0)
+    except tk.TclError as ex:
+        print(f'Unable to start the GUI window: {ex}')
+        raise SystemExit(1)
+
+    try:
+        app = OMRInkDetection(root, 1)
+        root.mainloop()
+    except KeyboardInterrupt:
+        print('Application closed.')

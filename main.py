@@ -895,7 +895,7 @@ class MainApplication:
             panel_body,
             "DATA EXTRACTION",
             "extraction_type_var",
-            ["Counter Foil Scanning", "Nominal Rolls Scanning"],
+            ["OMR Ink Detection", "Counter Foil Scanning", "Nominal Rolls Scanning"],
             self._on_extraction_type_selected,
         )
 
@@ -1057,7 +1057,9 @@ class MainApplication:
             return
         # Reset to placeholder after opening
         self.root.after(100, lambda: self.extraction_type_var.set("Select..."))
-        if "Counter Foil" in selection:
+        if "OMR Ink Detection" in selection:
+            self.open_omr_ink_detection()
+        elif "Counter Foil" in selection:
             self.open_omr_module()
         elif "Nominal" in selection:
             self.open_attendance_module()
@@ -1079,6 +1081,10 @@ class MainApplication:
 
         if selection == "Nominal Roll 1 Data Edit":
             self.NominalRoll1DataEdit()
+            return
+
+        if selection == "Nominal Roll 2 Data Edit":
+            self.NominalRoll2DataEdit()
             return
 
         self.open_pending_discrepancy(selection)
@@ -1447,7 +1453,7 @@ class MainApplication:
 
         self._open_module(
             VisualOMRViewerDemo,
-            "OMR ICR OCR Extraction Engine",
+            "Counterfoil Extraction Engine",
         )
 
     def open_attendance_module(self) -> None:
@@ -1455,7 +1461,17 @@ class MainApplication:
 
         self._open_module(
             AttendanceViewerDemo,
-            "Attendance Sheet Extraction",
+            "Nominal Roll Extraction",
+        )
+
+    def open_omr_ink_detection(self) -> None:
+        from OMRInkDetection import OMRInkDetection
+
+        user_id = self.current_user.user_id if self.current_user is not None else 1
+        self._open_module(
+            OMRInkDetection,
+            "OMR Ink Detection",
+            user_id,
         )
 
     def CounterFoilDataEdit(self) -> None:
@@ -1465,6 +1481,26 @@ class MainApplication:
         self._open_module(
             CounterFoilDataEdit,
             "Counter Foil Data Edit",
+            user_id,
+        )
+
+    def NominalRoll1DataEdit(self) -> None:
+        from NominalRoll1DataEdit import NominalRoll1DataEdit
+
+        user_id = self.current_user.user_id if self.current_user is not None else 1
+        self._open_module(
+            NominalRoll1DataEdit,
+            "Nominal Roll 1 Data Edit",
+            user_id,
+        )
+
+    def NominalRoll2DataEdit(self) -> None:
+        from NominalRoll2DataEdit import NominalRoll2DataEdit
+
+        user_id = self.current_user.user_id if self.current_user is not None else 1
+        self._open_module(
+            NominalRoll2DataEdit,
+            "Nominal Roll 2 Data Edit",
             user_id,
         )
 
