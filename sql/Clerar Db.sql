@@ -10,13 +10,22 @@ Select * from [dbo].[ErrorLog]
 Select ID, ReportFor, ReportName, ProcedureName from [dbo].[ExportReport]
 --whitenerflag, bubble_Th_status
 ('42S02', "[42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid object name 'CounterFoilDataEdit'. (208) (SQLExecDirectW)")
-
+Select * from [dbo].[error_log]
 ------------------- DB Clear Query
 Truncate table [dbo].[omr_results]
 Truncate table [dbo].[CounterFoilEditedDataLog]
 Truncate table [dbo].[CounterFoilEditedData]
 Truncate table [attendance_sheet_data_1]
 Truncate table [attendance_sheet_data2]
+Truncate table [dbo].[CounterFoilData]
+Truncate table [dbo].[CounterFoilDataEditLog]
+Truncate table [dbo].[CounterFoilEditedDataLog]
+Truncate table [dbo].[CounterFoilEditedData]
+Truncate table [dbo].[NominalRoll1]
+Truncate table [dbo].[NominalRoll2]
+Truncate table [dbo].[NominalRoll1EditLog]
+Truncate table [dbo].[NominalRoll2EditLog]
+
 Truncate table [dbo].[ErrorLog]
 Truncate table [dbo].[application_audit_log]
 ---Truncate table 

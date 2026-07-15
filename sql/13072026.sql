@@ -172,7 +172,7 @@ BEGIN
     -- Insert statements for procedure here
 	if @DiscrFor = 'Counter Foil'
 		Begin
-		--Declare @UserID int =1;
+		Declare @UserID int =1;
 			Insert into CounterFoilData ([id],
 			[filename], [barcode], [bubble_regno], [handwritten_regno],
 			[final_regno], [discrepancy], [discrepancy_detail], [candidate_signed],
@@ -485,32 +485,32 @@ As
 Begin
 	if @EditFor ='Full Data'
 	begin
-	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[Filename], Center_Code, Subcenter_Code, 
 			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, [Status],
 			 FinalDesc FinalStatus from NominalRoll2 where ID >= @FromID and ID <= @ToID--where FinalDesc =1
 				 --WhitenerDesc WhitenerApplied, ThDesc [Threshold < 35%], --where FinalDesc =1
 	end
 	else if @EditFor ='All discrepancy data'
 	begin
-	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[Filename], Center_Code, Subcenter_Code, 
 			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, 
 			 FinalDesc FinalStatus from NominalRoll2 where FinalDesc =1 and ID >= @FromID and ID <= @ToID
 	end
 	else if @EditFor ='Subject Code discrepancy'
 	begin
-		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+	Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[Filename], Center_Code, Subcenter_Code, 
 			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] CandSig, [Invigilator_Signed] InvSig, 
 			 FinalDesc FinalStatus from NominalRoll2 where SubDesc =1 and ID >= @FromID and ID <= @ToID
 	end
 	else if @EditFor ='Center Code discrepancy'
 	begin
-		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[Filename], Center_Code, Subcenter_Code, 
 			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] [Candidate Signed], [Invigilator_Signed], 
 			 FinalDesc FinalStatus from NominalRoll2 where CenterCodeDesc =1  and ID >= @FromID and ID <= @ToID
 	end
 	else if @EditFor ='Sub Center Code discrepancy'
 	begin
-		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[Filename], Center_Code, Subcenter_Code, 
 			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] [Candidate Signed], [Invigilator_Signed], 
 			 FinalDesc FinalStatus from NominalRoll2 where SubCenterCodeDesc =1  and ID >= @FromID and ID <= @ToID
 	end
@@ -520,15 +520,15 @@ Begin
 	--		 [subject_code], [BookletSlNo], CandSigDesc, 
 	--		InvSignDesc, WhitenerDesc WhitenerApplied, isBlackDesc [Non Standard Sheet], ThDesc [Threshold < 35%], FinalDesc FinalStatus from CounterFoilData where ICRRegNoDesc=1
 	--end
-	else if @EditFor ='OMR No discrepancy'
+	else if @EditFor ='QCAB discrepancy'
 	begin
-		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[Filename], Center_Code, Subcenter_Code, 
 			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] [Candidate Signed], [Invigilator_Signed], 
-			 FinalDesc FinalStatus from NominalRoll2  where [Q]=1 and ID >= @FromID and ID <= @ToID
+			 FinalDesc FinalStatus from NominalRoll2  where [QCABDesc]=1 and ID >= @FromID and ID <= @ToID
 	end
 	else if @EditFor ='Roll No discrepancy'
 	begin
-		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[Filename], Center_Code, Subcenter_Code, 
 			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] [Candidate Signed], [Invigilator_Signed], 
 			 FinalDesc FinalStatus from NominalRoll2  where [RegNoDesc]=1 and ID >= @FromID and ID <= @ToID
 	end
@@ -547,13 +547,13 @@ Begin
 	--end
 	else if @EditFor ='Candidate''s Signature discrepancy'
 	begin
-		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[Filename], Center_Code, Subcenter_Code, 
 			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] [Candidate Signed], [Invigilator_Signed], 
 			 FinalDesc FinalStatus from NominalRoll2  where CandSignDesc=1 and ID >= @FromID and ID <= @ToID
 	end
 	else if @EditFor ='Invigilator''s Signature discrepancy'
 	begin
-		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[filename], Center_Code, Subcenter_Code, 
+		Select ROW_NUMBER() OVER(ORDER BY ID ASC) AS SlNo,ID SheetNo,[Row_Number],[Filename], Center_Code, Subcenter_Code, 
 			 [Subject_Code], QCAB_Serial_No,[Registration_No] , [signature_present] [Candidate Signed], [Invigilator_Signed], 
 			 FinalDesc FinalStatus from NominalRoll2  where InvSignDesc=1 and ID >= @FromID and ID <= @ToID
 	end

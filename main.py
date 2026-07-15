@@ -1468,13 +1468,13 @@ class MainApplication:
             user_id,
         )
 
-    def NominalRoll1DataEdit(self) -> None:
-        from NominalRoll1DataEdit import NominalRoll1DataEdit
+    def ink_detection(self) -> None:
+        from ink_detection import  ink_detection
 
         user_id = self.current_user.user_id if self.current_user is not None else 1
         self._open_module(
-            NominalRoll1DataEdit,
-            "Nominal Roll 1 (Descriptive Test) Data Edit",
+            ink_detection,
+            "Ink Detection",
             user_id,
         )
     def open_pending_discrepancy(self, title: str) -> None:
@@ -1486,7 +1486,15 @@ class MainApplication:
             f"{title} is listed and ready to be wired. Add the Python module import and handler in this method when you are ready.",
             parent=self.root,
         )
+    def CounterFoilDataEdit(self) -> None:
+        from CounterFoilDataEdit import CounterFoilDataEdit
 
+        user_id = self.current_user.user_id if self.current_user is not None else 1
+        self._open_module(
+            CounterFoilDataEdit,
+            "Counter Foil Data Edit",
+            user_id,
+        )
 
 def main() -> None:
     if sys.platform != "win32":
