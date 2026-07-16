@@ -17,11 +17,17 @@ except Exception as e:
         "Install it via: pip install opencv-python or pip install opencv-python-headless\n"
         f"Original error: {e}"
     )
+
+import cv2
 import numpy as np
+import math
+
 from PIL import Image, ImageTk
 from pyzbar.pyzbar import decode
 import onnxruntime as ort
 import audit
+import shutil
+
 
 #import pytesseract
 #pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
@@ -62,6 +68,134 @@ def get_mnist_session():
             raise FileNotFoundError(f"ONNX Model not found at: {_MNIST_MODEL_PATH}")
     return _MNIST_SESSION
 
+def compute_bubble_col_offset(col_spacing, i):
+    """Return the template x-offset for the i-th bubble column.
+
+    Columns 5-9 (0-based i >= 4) use 1px less spacing per step.
+    """
+    if i == 4:
+        return float(i) * col_spacing - 1.0
+    elif i == 5:
+        return float(i) * col_spacing - 2.5
+    elif i == 6:
+        return float(i) * col_spacing - 3.5
+    elif i == 7:
+        return float(i) * col_spacing - 5.0
+    elif i == 8:
+        return float(i) * col_spacing - 6.0
+    elif i == 9:
+        return float(i) * col_spacing - 7.0
+
+    return float(i) * col_spacing
+
+
+def compute_bubble_col_x(grid_x, col_start, col_spacing, i):
+    return int(round(grid_x + col_start + compute_bubble_col_offset(col_spacing, i)))
+
+#--------------------Straightening the sheet-------------
+def straighten_sheet_using_corner_lines(img):
+
+    gray = cv2.cvtColor(
+        img,
+        cv2.COLOR_BGR2GRAY
+    )
+
+    _, thresh = cv2.threshold(
+        gray,
+        180,
+        255,
+        cv2.THRESH_BINARY_INV
+    )
+
+    lines = cv2.HoughLinesP(
+        thresh,
+        1,
+        np.pi / 180,
+        threshold=100,
+        minLineLength=400,
+        maxLineGap=20
+    )
+
+    if lines is None:
+        return img
+
+    best_horizontal = None
+    best_h_length = 0
+
+    best_vertical = None
+    best_v_length = 0
+
+    for line in lines:
+
+        x1, y1, x2, y2 = line[0]
+
+        angle = abs(
+            math.degrees(
+                math.atan2(
+                    y2 - y1,
+                    x2 - x1
+                )
+            )
+        )
+
+        length = math.hypot(
+            x2 - x1,
+            y2 - y1
+        )
+
+        # Near horizontal
+        if angle < 5:
+
+            if length > best_h_length:
+
+                best_h_length = length
+
+                best_horizontal = (
+                    x1, y1, x2, y2
+                )
+
+        # Near vertical
+        elif abs(angle - 90) < 5:
+
+            if length > best_v_length:
+
+                best_v_length = length
+
+                best_vertical = (
+                    x1, y1, x2, y2
+                )
+
+    if best_horizontal is None:
+        return img
+
+    x1, y1, x2, y2 = best_horizontal
+
+    rotation_angle = math.degrees(
+        math.atan2(
+            y2 - y1,
+            x2 - x1
+        )
+    )
+
+    h, w = img.shape[:2]
+
+    center = (w//2, h//2)
+
+    M = cv2.getRotationMatrix2D(
+        center,
+        rotation_angle,
+        1.0
+    )
+
+    rotated = cv2.warpAffine(
+        img,
+        M,
+        (w, h),
+        flags=cv2.INTER_CUBIC,
+        borderValue=(255,255,255)
+    )
+
+    return rotated
 # ──────────────────────────────────────────────────────────
 # SIGNATURE DETECTION
 # ──────────────────────────────────────────────────────────
@@ -129,7 +263,7 @@ def align_grid_perfect(img, tpl, scale_x, scale_y, box, is_bw):
         score = 0
         dist_sum = 0
         for i in range(b_conf["cols"]):
-            cx_tpl = est_grid_x + col_start + i * col_spacing + tx
+            cx_tpl = compute_bubble_col_x(est_grid_x + tx, col_start, col_spacing, i)
             dists = [abs(c[0] - cx_tpl) for c in detected_centroids]
             min_dist = min(dists) if dists else 999
             if min_dist < 6 * scale_x:
@@ -151,7 +285,7 @@ def align_grid_perfect(img, tpl, scale_x, scale_y, box, is_bw):
     
     template_points = []
     for i in range(b_conf["cols"]):
-        cx = col_start + i * col_spacing
+        cx = col_start + compute_bubble_col_offset(col_spacing, i)
         for j in range(b_conf["rows"]):
             cy = row_start + j * row_spacing
             template_points.append([cx, cy])
@@ -178,7 +312,82 @@ def align_grid_perfect(img, tpl, scale_x, scale_y, box, is_bw):
         
     aligned_grid_y = est_grid_y + best_ty
     return aligned_grid_x, aligned_grid_y
+def detect_register_grid(img):
 
+    gray = cv2.cvtColor(
+        img,
+        cv2.COLOR_BGR2GRAY
+    )
+
+    roi = gray[200:700, 850:1500]
+
+    _, thresh = cv2.threshold(
+        roi,
+        180,
+        255,
+        cv2.THRESH_BINARY_INV
+    )
+
+    lines = cv2.HoughLinesP(
+        thresh,
+        1,
+        np.pi/180,
+        100,
+        minLineLength=250,
+        maxLineGap=20
+    )
+
+    vertical_x = None
+    horizontal_y = None
+
+    max_v = 0
+    max_h = 0
+
+    for line in lines:
+
+        x1,y1,x2,y2 = line[0]
+
+        angle = abs(
+            np.degrees(
+                np.arctan2(
+                    y2-y1,
+                    x2-x1
+                )
+            )
+        )
+
+        length = np.hypot(
+            x2-x1,
+            y2-y1
+        )
+
+        if abs(angle) < 3:
+
+            if length > max_h:
+                max_h = length
+                horizontal_y = y1
+
+        elif abs(angle-90) < 3:
+
+            if length > max_v:
+                max_v = length
+                vertical_x = x1
+
+    vertical_x += 850
+    horizontal_y += 200
+
+    first_col_x = vertical_x + 58
+    first_row_y = horizontal_y + 56
+
+    col_spacing = 41
+    row_spacing = 30
+
+    return (
+        first_col_x,
+        first_row_y,
+        col_spacing,
+        row_spacing
+    )
 def read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw):
     if is_bw:
         box = find_handwritten_box_bw(img, tpl, scale_x, scale_y)
@@ -203,10 +412,14 @@ def read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw):
     bubble_Th_status = 0
     
     for i in range(b_conf["cols"]):
-        cx = int(grid_x + col_start + i * col_spacing)
+        cx = compute_bubble_col_x(grid_x, col_start, col_spacing, i)
+        
+        #cx = int(col_start + i*col_spacing)
+        
         col_vals = []
         for j in range(b_conf["rows"]):
             cy = int(grid_y + row_start + j * row_spacing)
+            #cy = int(row_start + j * row_spacing)
             r = int(max(3, b_conf["sample_radius"] * scale_x))
             y_min_idx = max(0, cy - r)
             y_max_idx = min(gray.shape[0], cy + r)
@@ -299,7 +512,7 @@ def align_grid_decoupled(img, tpl, scale_x, scale_y, barcode_rect):
         score = 0
         dist_sum = 0
         for i in range(b_conf["cols"]):
-            cx_tpl = est_grid_x + col_start + i * col_spacing + tx
+            cx_tpl = compute_bubble_col_x(est_grid_x + tx, col_start, col_spacing, i)
             dists = [abs(c[0] - cx_tpl) for c in detected_centroids]
             min_dist = min(dists) if dists else 999
             if min_dist < 6 * scale_x:
@@ -321,7 +534,7 @@ def align_grid_decoupled(img, tpl, scale_x, scale_y, barcode_rect):
     
     template_points = []
     for i in range(b_conf["cols"]):
-        cx = col_start + i * col_spacing
+        cx = col_start + compute_bubble_col_offset(col_spacing, i)
         for j in range(b_conf["rows"]):
             cy = row_start + j * row_spacing
             template_points.append([cx, cy])
@@ -361,7 +574,7 @@ def read_bubbles_decoupled(img, tpl, scale_x, scale_y, barcode_rect):
     detected_digits = []
     
     for i in range(b_conf["cols"]):
-        cx = int(grid_x + col_start + i * col_spacing)
+        cx = compute_bubble_col_x(grid_x, col_start, col_spacing, i)
         col_vals = []
         for j in range(b_conf["rows"]):
             cy = int(grid_y + row_start + j * row_spacing)
@@ -424,7 +637,7 @@ def read_handwritten_regno(img, tpl, scale_x, scale_y, grid_x, grid_y, is_bw):
 
     digits = []
     for i in range(b_conf["cols"]):
-        cx = int(grid_x + col_start + i * col_spacing)
+        cx = compute_bubble_col_x(grid_x, col_start, col_spacing, i)
         x1 = cx - box_w // 2
         x2 = cx + box_w // 2
         y1 = box_cy - box_h // 2
@@ -575,7 +788,7 @@ def detect_whitener_applied(img, grid_x, grid_y, tpl, scale_x, scale_y):
     for i in range(b_conf["cols"]):
         col_vals = []
         for j in range(b_conf["rows"]):
-            cx = int(grid_x + col_start + i * col_spacing)
+            cx = compute_bubble_col_x(grid_x, col_start, col_spacing, i)
             cy = int(grid_y + row_start + j * row_spacing)
             r = int(max(3, b_conf["sample_radius"] * scale_x))
             y_min_idx = max(0, cy - r)
@@ -720,7 +933,7 @@ def process_single_sheet_for_demo(img_path):
     img = cv2.imread(img_path)
     if img is None:
         return None
-        
+    img = straighten_sheet_using_corner_lines(img)    
     h, w, _ = img.shape
     tpl = get_omr_template(w)
     
@@ -861,6 +1074,32 @@ def process_single_sheet_for_demo(img_path):
         "full_annotated_img": full_annotated
     }
 
+
+def move_to_error_folder(file_path, error_message=""):
+
+    try:
+        source_folder = os.path.dirname(file_path)
+
+        error_folder = os.path.join(
+            source_folder,
+            "Error"
+        )
+
+        os.makedirs(error_folder, exist_ok=True)
+
+        destination = os.path.join(
+            error_folder,
+            os.path.basename(file_path)
+        )
+
+        shutil.move(file_path, destination)
+
+        print(
+            f"Moved to Error Folder : {file_path}"
+        )
+
+    except Exception as ex:
+        print(f"Error moving file : {ex}")
 # ──────────────────────────────────────────────────────────
 # TKINTER DUST-FREE visual EXTRACTOR APP
 # ──────────────────────────────────────────────────────────
@@ -2248,7 +2487,12 @@ class VisualOMRViewerDemo:
         if not self.omr_dir or not os.path.exists(self.omr_dir):
             messagebox.showerror("Error", "Invalid folder path!")
             return
+        #----Added for creating error folder
         
+        error_folder = os.path.join(self.omr_dir, "Error")
+
+        os.makedirs(error_folder, exist_ok=True)
+
         image_paths = list(self.image_paths)  # already built from GUI folder
         
         if not image_paths:
@@ -2291,7 +2535,27 @@ class VisualOMRViewerDemo:
                         i, total, filename, "pending", "pending")
 
                     try:
-                        res = process_single_sheet_for_demo(img_path)
+                        #res = process_single_sheet_for_demo(img_path)
+                        
+                        try:
+
+                            result = process_single_sheet_for_demo(img_path)
+
+                            if result is None:
+                                raise Exception(
+                                    "Sheet processing returned None"
+                                )
+                            
+                        except Exception as ex:
+
+                            move_to_error_folder(
+                                img_path,
+                                str(ex)
+                            )
+                            
+                            continue
+
+
                         if not res:
                             failed += 1
                             self._run_on_ui(

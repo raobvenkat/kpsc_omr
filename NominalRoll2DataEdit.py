@@ -1,8 +1,9 @@
 import os
 import tkinter as tk
 from tkinter import ttk
-from PIL import Image, ImageTk, ImageOps
+from PIL import Image, ImageTk, ImageOps, ImageEnhance, ImageFilter
 import db_credentials
+import numpy as np
 
 
 class NominalRoll2DataEdit:
@@ -557,17 +558,17 @@ class NominalRoll2DataEdit:
                      return None
             elif field_name == 'regno_var':
                 if row_no == 1:
-                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.23), int(h*0.28)
+                    x1, x2, y1, y2 = int(w*0.46), int(w*0.65), int(h*0.22), int(h*0.29)
                 elif row_no == 2:
-                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.32), int(h*0.38)
+                    x1, x2, y1, y2 = int(w*0.46), int(w*0.65), int(h*0.31), int(h*0.39)
                 elif row_no == 3:
-                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.42), int(h*0.48)
+                    x1, x2, y1, y2 = int(w*0.46), int(w*0.65), int(h*0.41), int(h*0.49)
                 elif row_no == 4:
-                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.52), int(h*0.58)
+                    x1, x2, y1, y2 = int(w*0.46), int(w*0.65), int(h*0.51), int(h*0.59)
                 elif row_no == 5:
-                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.62), int(h*0.68)
+                    x1, x2, y1, y2 = int(w*0.46), int(w*0.65), int(h*0.61), int(h*0.69)
                 elif row_no == 6:
-                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.72), int(h*0.78)
+                    x1, x2, y1, y2 = int(w*0.46), int(w*0.65), int(h*0.71), int(h*0.79)
                 else:
                      return None
             elif field_name == 'qpvc_var':
@@ -619,6 +620,52 @@ class NominalRoll2DataEdit:
         except Exception:
             return None
 
+    def preprocess_crop_for_ocr(self, crop_image):
+        """
+        Enhance crop image for better OCR accuracy.
+        Improves contrast, removes noise, and optimizes for text extraction.
+        """
+        if crop_image is None:
+            return None
+        
+        try:
+            # Convert to RGB if needed
+            img = crop_image.convert('RGB')
+            
+            # Upscale if image is too small (improves OCR)
+            if img.width < 200 or img.height < 30:
+                scale_factor = max(2, 200 // img.width if img.width > 0 else 2)
+                new_size = (img.width * scale_factor, img.height * scale_factor)
+                img = img.resize(new_size, Image.LANCZOS)
+            
+            # Convert to grayscale for better contrast
+            img_gray = img.convert('L')
+            
+            # Enhance contrast significantly
+            enhancer = ImageEnhance.Contrast(img_gray)
+            img_gray = enhancer.enhance(2.5)
+            
+            # Enhance sharpness
+            enhancer = ImageEnhance.Sharpness(img_gray)
+            img_gray = enhancer.enhance(2.0)
+            
+            # Apply slight blur to reduce noise (bilateral-like effect)
+            img_gray = img_gray.filter(ImageFilter.MedianFilter(size=3))
+            
+            # Apply threshold to create high-contrast binary image
+            # This helps OCR engines recognize text better
+            threshold = 150
+            img_binary = img_gray.point(lambda x: 0 if x < threshold else 255, '1')
+            
+            # Convert back to RGB for display (PIL requirement)
+            img_processed = img_binary.convert('RGB')
+            
+            return img_processed
+            
+        except Exception as e:
+            # If preprocessing fails, return original
+            return crop_image
+
     def display_focus_crop(self, crop_image):
         self.crop_canvas.delete('all')
         if crop_image is None:
@@ -626,8 +673,18 @@ class NominalRoll2DataEdit:
             return
 
         try:
+            # For OCR fields (printed text), apply preprocessing
+            ocr_fields = {'regno_var', 'omr_var', 'center_code_var', 'subcenter_var', 
+                         'subject_code_var', 'qpvc_var'}
+            
+            display_image = crop_image
+            if self.current_focus_field in ocr_fields:
+                display_image = self.preprocess_crop_for_ocr(crop_image)
+                if display_image is None:
+                    display_image = crop_image
+            
             # Zoom the crop using the current crop zoom factor between 100% and 600%.
-            img_rgb = crop_image.convert('RGB')
+            img_rgb = display_image.convert('RGB')
             zoom_ratio = max(0.25, min(6.0, self.crop_zoom_factor))
             zw = max(1, int(img_rgb.width * zoom_ratio))
             zh = max(1, int(img_rgb.height * zoom_ratio))
@@ -770,7 +827,11 @@ class NominalRoll2DataEdit:
             self.message_var.set('No columns available.')
             return
 
-        self.grid['columns'] = self.columns
+        # Clear existing columns and headings
+        for col in self.grid['columns']:
+            self.grid.heading(col, text='')
+            
+        self.grid['columns'] = tuple(self.columns)
         self.grid['show'] = 'headings'
         self.grid.column('#0', width=0, stretch=False)
 

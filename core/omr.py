@@ -24,6 +24,153 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import get_omr_template
 
+# Utility functions: deskew and bubble-grid detection
+try:
+    import pytesseract
+    _HAS_TESS = True
+except Exception:
+    _HAS_TESS = False
+
+
+def deskew_image_using_hough(img, *, debug=False):
+    """
+    Estimate page skew using long straight lines (Hough) and rotate image to deskew.
+
+    Returns: (rotated_image, angle_degrees)
+    """
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # strong binary for line detection
+    bw = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                               cv2.THRESH_BINARY_INV, 25, 10)
+
+    # emphasize horizontal and vertical long lines
+    horiz_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (max(20, img.shape[1]//40), 1))
+    mask = cv2.morphologyEx(bw, cv2.MORPH_OPEN, horiz_kernel)
+
+    lines = cv2.HoughLinesP(mask, 1, np.pi/180.0, threshold=100,
+                            minLineLength=img.shape[1]//3, maxLineGap=20)
+    if lines is None or len(lines) == 0:
+        return img.copy(), 0.0
+
+    angles = []
+    for x1, y1, x2, y2 in lines.reshape(-1, 4):
+        angles.append(np.arctan2((y2 - y1), (x2 - x1)))
+    angle = float(np.median(angles)) * 180.0 / np.pi
+
+    # rotate to correct angle (negative of detected skew)
+    (h, w) = img.shape[:2]
+    center = (w // 2, h // 2)
+    M = cv2.getRotationMatrix2D(center, -angle, 1.0)
+    rotated = cv2.warpAffine(img, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    if debug:
+        print(f"deskew: angle={angle:.3f}")
+    return rotated, angle
+
+
+def find_text_anchor_ocr(img, keyword, *, lang='eng'):
+    """
+    Attempt to find bounding box of printed `keyword` using pytesseract.
+    Returns (x,y,w,h) of the matched box or None.
+    """
+    if not _HAS_TESS:
+        return None
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    try:
+        data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT, lang=lang)
+    except Exception:
+        return None
+    texts = data.get('text', [])
+    for i, t in enumerate(texts):
+        if not t:
+            continue
+        if keyword.lower() in t.lower():
+            x = int(data['left'][i])
+            y = int(data['top'][i])
+            w = int(data['width'][i])
+            h = int(data['height'][i])
+            return (x, y, w, h)
+            return None
+
+
+def detect_circle_centers_and_grid(img, *, expected_cols=None, expected_rows=None):
+    """
+    Detect filled/unfilled bubble centers (or candidate bubble positions) in a cropped area.
+
+    Returns dict with: centers (list of (x,y,r)), col_xs, row_ys, col_spacing, row_spacing
+    """
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    # remove long guide lines to avoid splitting circles
+    horiz = cv2.getStructuringElement(cv2.MORPH_RECT, (max(20, img.shape[1]//30), 1))
+    vert = cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(6, img.shape[0]//80)))
+    no_lines = cv2.morphologyEx(gray, cv2.MORPH_OPEN, horiz)
+    no_lines = cv2.morphologyEx(no_lines, cv2.MORPH_OPEN, vert)
+
+    # adaptive threshold and clean up
+    thresh = cv2.adaptiveThreshold(no_lines, 255, cv2.ADAPTIVE_THRESH_MEAN_C,
+                                   cv2.THRESH_BINARY_INV, 21, 9)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel)
+
+    cnts, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    centers = []
+    for c in cnts:
+        area = cv2.contourArea(c)
+        if area < 20:
+            continue
+        ((x, y), r) = cv2.minEnclosingCircle(c)
+        if r < 2 or r > max(img.shape) // 10:
+            continue
+        circ_ratio = area / (np.pi * (r ** 2)) if r > 0 else 0
+        if circ_ratio < 0.4:
+            continue
+        centers.append((int(x), int(y), int(r)))
+
+    if not centers:
+        return {"centers": [], "col_xs": [], "row_ys": [], "col_spacing": 0, "row_spacing": 0}
+
+    centers_np = np.array([[c[0], c[1]] for c in centers])
+    # cluster rows by y
+    ys = np.sort(centers_np[:, 1])
+    dy = np.diff(ys)
+    if len(dy) == 0:
+        row_spacing = 0
+    else:
+        row_spacing = float(np.median(dy))
+
+    rows = []
+    current = [centers[0]]
+    centers_sorted = sorted(centers, key=lambda c: (c[1], c[0]))
+    for c in centers_sorted[1:]:
+        if abs(c[1] - current[-1][1]) > max(6, row_spacing * 0.6):
+            rows.append(current)
+            current = [c]
+        else:
+            current.append(c)
+    rows.append(current)
+
+    row_ys = [int(np.median([r[1] for r in row])) for row in rows]
+
+    # determine column x positions by median of each row's xs
+    # first normalize number of columns by mode
+    row_xs = [sorted([c[0] for c in row]) for row in rows]
+    # take longest row as reference
+    ref = max(row_xs, key=lambda r: len(r))
+    cols = len(ref)
+    col_xs = ref
+    if cols >= 2:
+        col_spacing = float(np.median(np.diff(sorted(col_xs))))
+    else:
+        col_spacing = 0.0
+
+    return {
+        "centers": centers,
+        "col_xs": col_xs,
+        "row_ys": row_ys,
+        "col_spacing": col_spacing,
+        "row_spacing": row_spacing,
+    }
+
+
 
 # ─────────────────────────────────────────────
 # SIGNATURE DETECTION
@@ -248,19 +395,130 @@ def read_bubbles(img, tpl, scale_x, scale_y):
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
+    # ── Attempt auto-detection of grid layout to correct misaligned columns ──
+    try:
+        b_conf = tpl["bubble_grid"]
+        cols = b_conf["cols"]
+        rows = b_conf["rows"]
+        # search crop slightly larger than expected grid area
+        search_x0 = max(0, int(grid_x - 40 * scale_x))
+        search_y0 = max(0, int(grid_y - 40 * scale_y))
+        search_x1 = min(img.shape[1], int(grid_x + (b_conf["col_start_offset"] + cols * b_conf["col_spacing"] + 80) * scale_x))
+        search_y1 = min(img.shape[0], int(grid_y + (b_conf["row_start_offset"] + rows * b_conf["row_spacing"] + 80) * scale_y))
+        search_crop = img[search_y0:search_y1, search_x0:search_x1]
+        if search_crop.size > 0:
+            info = detect_circle_centers_and_grid(search_crop)
+            # require at least 3 detected columns and a positive spacing to trust
+            if info and info.get("col_spacing", 0) > 2 and len(info.get("col_xs", [])) >= max(3, cols - 1):
+                detected_cols_rel = info["col_xs"]
+                detected_rows_rel = info.get("row_ys", [])
+
+                template_col_xs_rel = [
+                    int((grid_x + b_conf["col_start_offset"] * scale_x + i * b_conf["col_spacing"] * scale_x) - search_x0)
+                    for i in range(cols)
+                ]
+
+                median_r = 0
+                if info.get("centers"):
+                    median_r = float(np.median([c[2] for c in info["centers"]]))
+                tol = max(6, median_r * 0.6)
+
+                last_range = range(max(0, cols - 4), cols)
+                last_bad = 0
+                for i in last_range:
+                    if i < len(detected_cols_rel) and abs(detected_cols_rel[i] - template_col_xs_rel[i]) > tol:
+                        last_bad += 1
+                good_first = sum(
+                    1 for i in range(min(3, len(detected_cols_rel)))
+                    if abs(detected_cols_rel[i] - template_col_xs_rel[i]) <= tol
+                )
+
+                applied_affine = False
+                if last_bad >= 2 and good_first >= 2:
+                    k = min(3, len(detected_cols_rel), cols)
+                    if k >= 3 and len(detected_rows_rel) > 0:
+                        ref_row = int(np.median(detected_rows_rel))
+                        src_pts = np.array([[detected_cols_rel[i], ref_row] for i in range(k)], dtype=np.float32)
+                        dst_pts = np.array([[template_col_xs_rel[i], ref_row] for i in range(k)], dtype=np.float32)
+                        M, inliers = cv2.estimateAffinePartial2D(src_pts, dst_pts)
+                        if M is not None:
+                            warped = cv2.warpAffine(search_crop, M, (search_crop.shape[1], search_crop.shape[0]), flags=cv2.INTER_LINEAR)
+                            info2 = detect_circle_centers_and_grid(warped)
+                            if info2 and info2.get("col_spacing", 0) > 2:
+                                detected_col_xs = [int(search_x0 + x) for x in info2["col_xs"]]
+                                row_ys = [int(search_y0 + y) for y in info2.get("row_ys", [])]
+                                if len(detected_col_xs) >= cols:
+                                    col_xs = detected_col_xs[:cols]
+                                else:
+                                    base = detected_col_xs[0]
+                                    col_xs = [int(base + i * info2["col_spacing"]) for i in range(cols)]
+                                grid_x = col_xs[0] - int(b_conf["col_start_offset"] * scale_x)
+                                align_method = align_method + "+affine_fix"
+                                applied_affine = True
+
+                if not applied_affine:
+                    detected_col_xs = [int(search_x0 + x) for x in detected_cols_rel]
+                    if len(detected_col_xs) >= cols:
+                        detected_col_xs = sorted(detected_col_xs)
+                        col_xs = [int(v) for v in detected_col_xs[:cols]]
+                    else:
+                        base_x = int(search_x0 + detected_cols_rel[0])
+                        col_xs = [int(base_x + i * info["col_spacing"]) for i in range(cols)]
+
+                    row_ys = [int(search_y0 + y) for y in detected_rows_rel]
+                    if not row_ys:
+                        row_ys = [
+                            int(grid_y + b_conf["row_start_offset"] * scale_y + j * b_conf["row_spacing"] * scale_y)
+                            for j in range(rows)
+                        ]
+
+                    try:
+                        if len(detected_cols_rel) >= 3 and last_bad >= 2:
+                            mapping = {}
+                            for dx in detected_cols_rel:
+                                diffs = [abs(dx - tx) for tx in template_col_xs_rel]
+                                idx = int(np.argmin(diffs))
+                                if idx not in mapping:
+                                    mapping[idx] = dx
+
+                            if len(mapping) >= 2:
+                                idxs = np.array(sorted(mapping.keys()), dtype=float)
+                                offs = np.array([template_col_xs_rel[int(i)] - mapping[int(i)] for i in idxs], dtype=float)
+                                if len(idxs) >= 2:
+                                    a, b = np.polyfit(idxs, offs, 1)
+                                    pred_offs = a * np.arange(cols) + b
+                                    corrected_rel = [template_col_xs_rel[i] - float(pred_offs[i]) for i in range(cols)]
+                                    col_xs = [int(search_x0 + x) for x in corrected_rel]
+                                    align_method = align_method + "+per_row_linear"
+                    except Exception:
+                        pass
+
+                    grid_x = col_xs[0] - int(b_conf["col_start_offset"] * scale_x)
+                    align_method = align_method + "+auto_detect"
+    except Exception:
+        # any failure falls back to template-based coordinates below
+        pass
+
     b_conf = tpl["bubble_grid"]
     cols = b_conf["cols"]
     rows = b_conf["rows"]
     r = int(max(3, b_conf["sample_radius"] * min(scale_x, scale_y)))
 
-    col_xs = [
-        int(grid_x + b_conf["col_start_offset"] * scale_x + i * b_conf["col_spacing"] * scale_x)
-        for i in range(cols)
-    ]
-    row_ys = [
-        int(grid_y + b_conf["row_start_offset"] * scale_y + j * b_conf["row_spacing"] * scale_y)
-        for j in range(rows)
-    ]
+    # If auto-detection did not populate col_xs/row_ys above, compute from template
+    try:
+        col_xs
+    except NameError:
+        col_xs = [
+            int(grid_x + b_conf["col_start_offset"] * scale_x + i * b_conf["col_spacing"] * scale_x)
+            for i in range(cols)
+        ]
+    try:
+        row_ys
+    except NameError:
+        row_ys = [
+            int(grid_y + b_conf["row_start_offset"] * scale_y + j * b_conf["row_spacing"] * scale_y)
+            for j in range(rows)
+        ]
 
     img_draw = img.copy()
     detected_digits = []
