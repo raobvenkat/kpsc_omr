@@ -5,10 +5,44 @@ import tkinter as tk
 
 from tkinter import ttk
 from tkinter import filedialog
+from tkinter import messagebox
 
 import db_credentials
 
-from ink_detection import classify_ink_type
+
+def classify_ink_type(crop):
+    """Classify marked bubble ink from a BGR OpenCV crop."""
+    if crop is None or crop.size == 0:
+        return "Unknown"
+
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+
+    # Blue pen has clear hue/saturation; pencil is dark but low-saturation.
+    blue_mask = cv2.inRange(
+        hsv,
+        np.array([90, 45, 35], dtype=np.uint8),
+        np.array([135, 255, 255], dtype=np.uint8),
+    )
+    dark_mask = gray < 145
+    low_sat_mask = hsv[:, :, 1] < 70
+    pencil_mask = dark_mask & low_sat_mask
+
+    blue_pixels = int(np.count_nonzero(blue_mask))
+    pencil_pixels = int(np.count_nonzero(pencil_mask))
+
+    min_pixels = max(12, int(crop.shape[0] * crop.shape[1] * 0.01))
+
+    has_blue = blue_pixels >= min_pixels
+    has_pencil = pencil_pixels >= min_pixels
+
+    if has_blue and has_pencil:
+        return "Mixed"
+    if has_blue:
+        return "Blue Pen"
+    if has_pencil:
+        return "Pencil"
+    return "Unknown"
 
 
 class OMRInkDetection:
@@ -26,7 +60,7 @@ class OMRInkDetection:
 
         try:
             self.root.state("zoomed")
-        except:
+        except tk.TclError:
             self.root.geometry("1600x900")
 
         self.selected_folder = tk.StringVar()
@@ -243,7 +277,7 @@ class OMRInkDetection:
                     best_score = dark_pixels
                     best_crop = cell
 
-            if best_score > 80:
+            if best_crop is not None and best_score > 80:
 
                 ink_type = classify_ink_type(
                     best_crop
@@ -282,45 +316,37 @@ class OMRInkDetection:
     ):
 
         conn = db_credentials.get_sql_connection()
-
-        cursor = conn.cursor()
-
-        cursor.execute(
-            """
-            INSERT INTO OMRInkDetection
-            (
-                FileName,
-                InkType,
-                CreatedDate,
-                AddUserID
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO OMRInkDetection
+                (
+                    FileName,
+                    InkType,
+                    CreatedDate,
+                    AddUserID
+                )
+                OUTPUT INSERTED.ID
+                VALUES
+                (
+                    ?,
+                    ?,
+                    GETDATE(),
+                    ?
+                )
+                """,
+                (
+                    filename[:200],
+                    ink_type,
+                    self.user_id
+                )
             )
-            VALUES
-            (
-                ?,
-                ?,
-                GETDATE(),
-                ?
-            )
-            """,
-            (
-                filename,
-                ink_type,
-                self.user_id
-            )
-        )
-
-        conn.commit()
-
-        cursor.execute(
-            "SELECT @@IDENTITY"
-        )
-
-        record_id = cursor.fetchone()[0]
-
-        cursor.close()
-        conn.close()
-
-        return record_id
+            record_id = cursor.fetchone()[0]
+            conn.commit()
+            return record_id
+        finally:
+            conn.close()
 
     # --------------------------------------------------
     # Processing
@@ -372,25 +398,20 @@ class OMRInkDetection:
         self.progress["value"] = 0
 
         processed = 0
+        failed = 0
 
         for filepath in files:
 
             try:
 
-                filename = os.path.basename(
-                    filepath
-                )
+                filename = os.path.basename(filepath)
 
                 ink_type = self.detect_sheet_ink(
                     filepath
                 )
 
-                
-              
-                full_file_path = filepath
-
                 rec_id = self.save_result(
-                    full_file_path,
+                    filename,
                     ink_type
                 )
 
@@ -415,15 +436,29 @@ class OMRInkDetection:
                 self.root.update_idletasks()
 
             except Exception as ex:
-
-                print(
-                    filename,
-                    ex
+                failed += 1
+                self.grid.insert(
+                    "",
+                    "end",
+                    values=(
+                        "",
+                        os.path.basename(filepath),
+                        f"Error: {ex}",
+                        "",
+                        self.user_id
+                    )
                 )
+                self.root.update_idletasks()
 
         self.message_var.set(
-            f"{processed} files processed and imported successfully."
+            f"{processed} files processed successfully. {failed} failed."
         )
+        if failed:
+            messagebox.showwarning(
+                "Processing Completed",
+                f"{processed} files processed successfully.\n{failed} file(s) failed.",
+                parent=self.root,
+            )
 if __name__ == '__main__':
     try:
         root = tk.Tk()
