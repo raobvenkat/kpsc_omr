@@ -1,0 +1,5 @@
+cd C:\kpsc\kpsc_omr
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m compileall .
+python -m PyInstaller --noconfirm --clean KPSC_OMR_Suite.spec
