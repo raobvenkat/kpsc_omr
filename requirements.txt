@@ -20,7 +20,7 @@ pyodbc==5.3.0
 openpyxl==3.1.5
 
 # GUI components
-tkcalendar==1.7.0
+tkcalendar
 
 # Windows runtime and executable packaging
 pywin32==312; sys_platform == "win32"
