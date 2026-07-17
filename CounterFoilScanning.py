@@ -2539,9 +2539,9 @@ class VisualOMRViewerDemo:
                         
                         try:
 
-                            result = process_single_sheet_for_demo(img_path)
+                            res = process_single_sheet_for_demo(img_path)
 
-                            if result is None:
+                            if res is None:
                                 raise Exception(
                                     "Sheet processing returned None"
                                 )
