@@ -2133,6 +2133,58 @@ class VisualOMRViewerDemo:
 
         return digits.strip(), crop
 
+    @staticmethod
+    def _prefer_curved_two_over_nine(candidate, gray_up):
+        """Prefer 2 over 9 for printed booklet digits when the shape suggests a curved-top 2."""
+        if not candidate or len(candidate) != 7 or gray_up is None or gray_up.size == 0:
+            return candidate
+
+        # Normalize to a clean binary image for shape inspection.
+        _, bw = cv2.threshold(gray_up, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        if np.mean(bw) < 127:
+            bw = cv2.bitwise_not(bw)
+
+        h, w = bw.shape
+        cell_width = w // 7
+        corrected = list(candidate)
+
+        def dark_ratio(region):
+            if region.size == 0:
+                return 0.0
+            return float(np.count_nonzero(region == 0)) / float(region.size)
+
+        for i, ch in enumerate(candidate):
+            if ch not in {'2', '9', '0'}:
+                continue
+            x0 = i * cell_width
+            x1 = w if i == 6 else (i + 1) * cell_width
+            cell = bw[:, x0:x1]
+            if cell.size == 0:
+                continue
+
+            h_c, w_c = cell.shape
+            top = cell[0:max(1, h_c // 3), :]
+            tl = top[:, 0:max(1, w_c // 3)]
+            tr = top[:, max(0, w_c - w_c // 3):]
+            bl = cell[max(0, 2 * h_c // 3):, 0:max(1, w_c // 3)]
+            br = cell[max(0, 2 * h_c // 3):, max(0, w_c - w_c // 3):]
+
+            tl_dark_ratio = dark_ratio(tl)
+            tr_dark_ratio = dark_ratio(tr)
+            bl_dark_ratio = dark_ratio(bl)
+            br_dark_ratio = dark_ratio(br)
+
+            if ch == '9':
+                # Printed '2' usually has a much lighter top-left region than '9'.
+                if tl_dark_ratio < 0.25 and tr_dark_ratio > 0.22 and br_dark_ratio < 0.45:
+                    corrected[i] = '2'
+            elif ch == '0':
+                # Printed '9' tends to have a lighter lower-left quadrant than '0'.
+                if tl_dark_ratio > 0.30 and tr_dark_ratio > 0.30 and bl_dark_ratio < 0.20:
+                    corrected[i] = '9'
+
+        return ''.join(corrected)
+
     # Booklet Serial Number Extraction — reads large printed 7-digit number below QCA label (bottom-right)
     def extract_booklet_number(self, img, scale_x, scale_y):
         """
@@ -2150,8 +2202,16 @@ class VisualOMRViewerDemo:
         #   y: ~790–870   →  72.5% – 79.8% of height
         x1 = int(w * 0.556)
         x2 = int(w * 0.949)
-        y1 = int(h * 0.725)
-        y2 = int(h * 0.800)
+        y1 = int(h * 0.70)
+        y2 = int(h * 0.82)
+
+        # Add a larger vertical margin so the full printed booklet number is captured.
+        margin_x = max(8, int(w * 0.01))
+        margin_y = max(12, int(h * 0.015))
+        x1 -= margin_x
+        x2 += margin_x
+        y1 -= margin_y
+        y2 += margin_y
 
         # Clamp to image bounds
         x1 = max(0, x1); x2 = min(w, x2)
@@ -2187,32 +2247,91 @@ class VisualOMRViewerDemo:
         kernel = np.ones((2, 2), np.uint8)
         th = cv2.dilate(th, kernel, iterations=1)
 
+        # Add a second preprocessed pass to isolate dark-gray / blue ink.
+        hsv_crop = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        lower_blue = np.array([90, 40, 40])
+        upper_blue = np.array([140, 255, 255])
+        blue_mask = cv2.inRange(hsv_crop, lower_blue, upper_blue)
+        blue_mask_up = cv2.resize(
+            blue_mask,
+            (gray_up.shape[1], gray_up.shape[0]),
+            interpolation=cv2.INTER_NEAREST
+        )
+        blue_only = cv2.bitwise_and(gray_up, gray_up, mask=blue_mask_up)
+
         # ── OCR ──────────────────────────────────────────────────────────────
         reader = get_ocr_reader()
 
-        # Try on processed image first, fallback to raw gray upscaled
         best_text = ""
         best_conf = 0.0
+        candidate_words = []
 
-        for ocr_input in [th, gray_up]:
-            results = reader.readtext(ocr_input, detail=1,
-                                      allowlist='0123456789',
-                                      paragraph=False,
-                                      width_ths=0.9,
-                                      height_ths=0.5)
+        def try_ocr(image):
+            try:
+                results = reader.readtext(image, detail=1,
+                                          allowlist='0123456789',
+                                          paragraph=False,
+                                          width_ths=0.9,
+                                          height_ths=0.5)
+            except Exception:
+                return
             for (_, text, conf) in results:
                 digits_only = ''.join(filter(str.isdigit, text))
-                if len(digits_only) >= 4 and conf > best_conf:
-                    best_text = digits_only
-                    best_conf = conf
-            if best_text:
-                break
+                if len(digits_only) >= 4:
+                    candidate_words.append((conf, digits_only))
 
-        # Last-resort fallback: grab all digits regardless of confidence
+        # Gather candidates from all available preprocessed inputs.
+        for ocr_input in [th, gray_up, blue_only]:
+            if ocr_input is None or ocr_input.size == 0:
+                continue
+            try_ocr(ocr_input)
+
+        if candidate_words:
+            exact7 = [(conf, digits) for conf, digits in candidate_words if len(digits) == 7]
+            if exact7:
+                best_conf, best_text = max(exact7, key=lambda x: (x[0], x[1]))
+            else:
+                best_conf, best_text = max(candidate_words, key=lambda x: (x[0], len(x[1]), x[1]))
+
+        # Combine all digits if no strong candidate was found, then choose longest match.
         if not best_text:
-            results = reader.readtext(gray_up, detail=1, allowlist='0123456789')
-            all_digits = ''.join(filter(str.isdigit, " ".join(r[1] for r in results)))
-            best_text = all_digits
+            results = reader.readtext(gray_up, detail=1, allowlist='0123456789', paragraph=False)
+            digit_groups = [''.join(filter(str.isdigit, r[1])) for r in results if r[1]]
+            if digit_groups:
+                best_text = max(digit_groups, key=len)
+
+        # If the detected value contains more than 7 digits, choose the best contiguous 7-digit group.
+        if len(best_text) > 7:
+            groups = re.findall(r'\d{7,}', best_text)
+            if groups:
+                best_text = max(groups, key=len)
+            else:
+                best_text = best_text[-7:]
+
+        # Prefer a valid 7-digit result by re-scoring individual OCR words if needed.
+        if len(best_text) != 7:
+            words = []
+            for ocr_input in [th, gray_up, blue_only]:
+                if ocr_input is None or ocr_input.size == 0:
+                    continue
+                try:
+                    results = reader.readtext(ocr_input, detail=1,
+                                              allowlist='0123456789',
+                                              paragraph=False)
+                except Exception:
+                    continue
+                for (_, text, conf) in results:
+                    digits_only = ''.join(filter(str.isdigit, text))
+                    if len(digits_only) == 7:
+                        words.append((conf, digits_only))
+            if words:
+                best_text = max(words, key=lambda x: (x[0], x[1]))[1]
+
+        best_text = best_text.strip()
+
+        # Apply printed-digit shape heuristic for 2 vs 9 if the result is 7 digits.
+        if len(best_text) == 7:
+            best_text = VisualOMRViewerDemo._prefer_curved_two_over_nine(best_text, gray_up)
 
         # ── Debug overlay on original image ──────────────────────────────────
         debug = img.copy()
