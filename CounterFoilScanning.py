@@ -238,7 +238,7 @@ def check_ink_present_unified(crop_img, is_bw):
     large_components = sum(1 for a in areas if a >= 30)
     # ✅ FIX: Calculate ink density
     ink_density = np.sum(ink_mask > 0) / float(ink_mask.size)
-    is_signed = large_components >= 2 and ink_density > 0.003
+    is_signed = (large_components >= 2 and ink_density > 0.003) or (large_components >= 1 and areas[0] >= 120 and ink_density >= 0.005)
     ratio = float(areas[0]) / ink_mask.size if areas else 0.0
     return bool(is_signed), ratio
 
