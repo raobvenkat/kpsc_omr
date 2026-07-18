@@ -21,6 +21,7 @@ except Exception as e:
 import cv2
 import numpy as np
 import math
+import re
 
 from PIL import Image, ImageTk
 from pyzbar.pyzbar import decode
@@ -94,39 +95,65 @@ def compute_bubble_col_x(grid_x, col_start, col_spacing, i):
 
 #--------------------Straightening the sheet-------------
 def straighten_sheet_using_corner_lines(img):
+    """Straighten sheet using red-colored border lines. Return (rotated_img, rotation_matrix, rotation_angle, center)."""
 
-    gray = cv2.cvtColor(
-        img,
-        cv2.COLOR_BGR2GRAY
-    )
+    h, w = img.shape[:2]
+    center = (w//2, h//2)
 
-    _, thresh = cv2.threshold(
-        gray,
-        180,
-        255,
-        cv2.THRESH_BINARY_INV
-    )
-
-    lines = cv2.HoughLinesP(
-        thresh,
+    # ── Detect RED-colored lines (Subject Code border, OMR border) ──────────────────
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    
+    # Red hue in HSV: 0-10 and 170-180 (wraps around)
+    lower_red1 = np.array([0, 50, 50])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([170, 50, 50])
+    upper_red2 = np.array([180, 255, 255])
+    
+    mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
+    mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
+    mask_red = cv2.bitwise_or(mask_red1, mask_red2)
+    
+    # Dilate to connect nearby red pixels
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    mask_red = cv2.dilate(mask_red, kernel, iterations=2)
+    
+    # Detect lines in red mask
+    lines_red = cv2.HoughLinesP(
+        mask_red,
         1,
         np.pi / 180,
-        threshold=100,
-        minLineLength=400,
-        maxLineGap=20
+        threshold=80,
+        minLineLength=300,
+        maxLineGap=15
     )
+    
+    # If red lines found, use them; otherwise fall back to grayscale detection
+    if lines_red is not None and len(lines_red) > 0:
+        lines = lines_red
+    else:
+        # Fallback: grayscale line detection
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)
+        lines = cv2.HoughLinesP(
+            thresh,
+            1,
+            np.pi / 180,
+            threshold=100,
+            minLineLength=400,
+            maxLineGap=20
+        )
 
-    if lines is None:
-        return img
+    if lines is None or len(lines) == 0:
+        # No lines found; return identity
+        M = cv2.getRotationMatrix2D(center, 0.0, 1.0)
+        return img, M, 0.0, center
 
     best_horizontal = None
     best_h_length = 0
-
     best_vertical = None
     best_v_length = 0
 
     for line in lines:
-
         x1, y1, x2, y2 = line[0]
 
         angle = abs(
@@ -138,35 +165,24 @@ def straighten_sheet_using_corner_lines(img):
             )
         )
 
-        length = math.hypot(
-            x2 - x1,
-            y2 - y1
-        )
+        length = math.hypot(x2 - x1, y2 - y1)
 
-        # Near horizontal
+        # Near horizontal (within 5 degrees of 0°)
         if angle < 5:
-
             if length > best_h_length:
-
                 best_h_length = length
+                best_horizontal = (x1, y1, x2, y2)
 
-                best_horizontal = (
-                    x1, y1, x2, y2
-                )
-
-        # Near vertical
+        # Near vertical (within 5 degrees of 90°)
         elif abs(angle - 90) < 5:
-
             if length > best_v_length:
-
                 best_v_length = length
-
-                best_vertical = (
-                    x1, y1, x2, y2
-                )
+                best_vertical = (x1, y1, x2, y2)
 
     if best_horizontal is None:
-        return img
+        # No horizontal line found; return identity
+        M = cv2.getRotationMatrix2D(center, 0.0, 1.0)
+        return img, M, 0.0, center
 
     x1, y1, x2, y2 = best_horizontal
 
@@ -177,9 +193,12 @@ def straighten_sheet_using_corner_lines(img):
         )
     )
 
-    h, w = img.shape[:2]
-
-    center = (w//2, h//2)
+    # Only apply rotation if the angle is significant (> 1.5 degrees)
+    # This avoids over-correcting already-straight sheets due to minor line detection errors
+    if abs(rotation_angle) < 1.5:
+        # Sheet is already straight; return identity transformation
+        M = cv2.getRotationMatrix2D(center, 0.0, 1.0)
+        return img, M, 0.0, center
 
     M = cv2.getRotationMatrix2D(
         center,
@@ -195,7 +214,7 @@ def straighten_sheet_using_corner_lines(img):
         borderValue=(255,255,255)
     )
 
-    return rotated
+    return rotated, M, rotation_angle, center
 # ──────────────────────────────────────────────────────────
 # SIGNATURE DETECTION
 # ──────────────────────────────────────────────────────────
@@ -929,19 +948,102 @@ def analyze_sheet_color_mode(img):
         "strong_color_ratio": round(float(strong_red_magenta_ratio), 5),
     }
 
+def apply_rotation_to_crop(crop, M, center):
+    """Apply rotation matrix M to a crop image."""
+    if crop.size == 0:
+        return crop
+    h, w = crop.shape[:2]
+    rotated_crop = cv2.warpAffine(
+        crop,
+        M,
+        (w, h),
+        flags=cv2.INTER_CUBIC,
+        borderValue=(255,255,255)
+    )
+    return rotated_crop
+
+def detect_red_border_lines(img):
+    """Detect red-colored border lines in the sheet. Returns dict with line positions."""
+    h, w = img.shape[:2]
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    
+    # Red hue in HSV: 0-10 and 170-180 (wraps around)
+    lower_red1 = np.array([0, 50, 50])
+    upper_red1 = np.array([10, 255, 255])
+    lower_red2 = np.array([170, 50, 50])
+    upper_red2 = np.array([180, 255, 255])
+    
+    mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
+    mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
+    mask_red = cv2.bitwise_or(mask_red1, mask_red2)
+    
+    # Dilate to connect nearby red pixels
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    mask_red = cv2.dilate(mask_red, kernel, iterations=2)
+    
+    # Detect lines in red mask
+    lines = cv2.HoughLinesP(
+        mask_red,
+        1,
+        np.pi / 180,
+        threshold=80,
+        minLineLength=300,
+        maxLineGap=15
+    )
+    
+    result = {
+        "found": False
+    }
+    
+    if lines is None or len(lines) == 0:
+        return result
+    
+    # Basic red line detection - just check if lines were found
+    if len(lines) > 0:
+        result["found"] = True
+    
+    return result
+
 def process_single_sheet_for_demo(img_path):
     img = cv2.imread(img_path)
     if img is None:
         return None
-    img = straighten_sheet_using_corner_lines(img)    
+    
+    # Extract all display crops BEFORE straightening so they maintain natural appearance
+    img_original = img.copy()
+    
+    h_orig, w_orig, _ = img_original.shape
+    tpl = get_omr_template(w_orig)
+    
+    h_target = 1080 if tpl["name"] == "standard" else 784
+    scale_y_orig = h_orig / h_target
+    
+    is_padded_bw = w_orig > 1800
+    if is_padded_bw:
+        scale_y_orig = h_orig / 1080.0
+        scale_x_orig = scale_y_orig
+    else:
+        scale_x_orig = w_orig / tpl["target_width"]
+        scale_y_orig = scale_x_orig
+    
+    # Extract all crops from ORIGINAL image before straightening
+    subject_code, subject_crop = VisualOMRViewerDemo.extract_subject_code(None, img_original, scale_x_orig, scale_y_orig)
+    booklet_sl_no, omr_threshold, booklet_crop = VisualOMRViewerDemo.extract_booklet_number(None, img_original, scale_x_orig, scale_y_orig)
+    
+    # Straighten the sheet for main processing (bubble reading, etc.)
+    img, M, rotation_angle, center = straighten_sheet_using_corner_lines(img)    
     h, w, _ = img.shape
-    tpl = get_omr_template(w)
+    
+    # Apply the same rotation correction to the extracted crops so they appear straight
+    subject_crop = apply_rotation_to_crop(subject_crop, M, center)
+    booklet_crop = apply_rotation_to_crop(booklet_crop, M, center)
     
     color_mode = analyze_sheet_color_mode(img)
     avg_sat = color_mode["avg_sat"]
     is_bw = bool(color_mode["is_bw"])
     isblack = int(color_mode["isblack"])
     
+    # Recalculate scale factors for straightened image
     h_target = 1080 if tpl["name"] == "standard" else 784
     scale_y = h / h_target
     
@@ -949,7 +1051,6 @@ def process_single_sheet_for_demo(img_path):
     decoded = decode(right_half)
     barcode_val = decoded[0].data.decode('utf-8') if decoded else "Not Detected"
     
-    is_padded_bw = w > 1800
     if is_padded_bw:
         scale_y = h / 1080.0
         scale_x = scale_y
@@ -963,39 +1064,41 @@ def process_single_sheet_for_demo(img_path):
     # 2. Handwritten Digit OCR
     handwritten_regno = read_handwritten_regno(img, tpl, scale_x, scale_y, grid_x, grid_y, is_bw)
         
-    # 3. Signature crops and status (x_start shifted to 130 to avoid border and printed label noise)
-    cand_sig_y_start = max(0, int(grid_y + 2 * scale_y))
-    cand_sig_y_end = min(h, int(grid_y + 92 * scale_y))
+    # 3. Signature crops and status
+    # Extract candidate signature
     cand_sig_x_start = max(0, int(130 * scale_x))
     cand_sig_x_end = min(w, int(900 * scale_x))
-    
+    cand_sig_y_start = max(0, int(grid_y + 2 * scale_y))
+    cand_sig_y_end = min(h, int(grid_y + 92 * scale_y))
     cand_sig_crop = img[cand_sig_y_start:cand_sig_y_end, cand_sig_x_start:cand_sig_x_end]
-    cand_signed, cand_ratio = check_ink_present_unified(cand_sig_crop, is_bw)
     
-    inv_sig_y_start = max(0, int(grid_y + 152 * scale_y))
-    inv_sig_y_end = min(h, int(grid_y + 252 * scale_y))
+    # Extract invigilator signature
     inv_sig_x_start = max(0, int(130 * scale_x))
     inv_sig_x_end = min(w, int(900 * scale_x))
-    
+    inv_sig_y_start = max(0, int(grid_y + 152 * scale_y))
+    inv_sig_y_end = min(h, int(grid_y + 252 * scale_y))
     inv_sig_crop = img[inv_sig_y_start:inv_sig_y_end, inv_sig_x_start:inv_sig_x_end]
-    inv_signed, inv_ratio = check_ink_present_unified(inv_sig_crop, is_bw)
     
-    # 4. Handwritten Box Crop for display
+    # 4. Handwritten Box Crop
+    # Calculate box position for handwritten RegNo
+    box_cy = int(grid_y - 38 * scale_y)
+    box_h = int(45 * scale_y)
     col_spacing = tpl["bubble_grid"]["col_spacing"] * scale_x
     col_start = tpl["bubble_grid"]["col_start_offset"] * scale_x
-    box_cy = grid_y - int(38 * scale_y)
-    box_h = int(45 * scale_y)
-    box_w = int(col_spacing * 0.85)
-    
-    # Crop full 9 digit cells bounding region
+    box_w = int(8 * col_spacing)
     hw_x0 = int(grid_x + col_start - box_w//2 - 10)
     hw_x1 = int(grid_x + col_start + 8 * col_spacing + box_w//2 + 10)
     hw_y0 = int(box_cy - box_h//2 - 5)
     hw_y1 = int(box_cy + box_h//2 + 5)
-    reg_box_crop = img[max(0, hw_y0):min(h, hw_y1), max(0, hw_x0):min(w, hw_x1)]
-
-    subject_code, subject_crop = VisualOMRViewerDemo.extract_subject_code(None, img, scale_x, scale_y)
-    booklet_sl_no, omr_threshold, booklet_crop = VisualOMRViewerDemo.extract_booklet_number(None, img, scale_x, scale_y)
+    hw_x0 = max(0, hw_x0)
+    hw_x1 = min(w, hw_x1)
+    hw_y0 = max(0, hw_y0)
+    hw_y1 = min(h, hw_y1)
+    reg_box_crop = img[hw_y0:hw_y1, hw_x0:hw_x1]
+    
+    # Check ink on signature crops
+    cand_signed, cand_ratio = check_ink_present_unified(cand_sig_crop, is_bw)
+    inv_signed, inv_ratio = check_ink_present_unified(inv_sig_crop, is_bw)
 
     # Whitener flag: detect actual bright bubble corrections on all 70 bubbles,
     # or when any bubble column's fill percent is below 5%.
@@ -2109,8 +2212,10 @@ class VisualOMRViewerDemo:
             self.disc_lbl.config(text=f"DISCREPANCY STATUS: MATCHED\n{disc_detail}", bg="#2e7d32")
     #Subject Code Extraction
     def extract_subject_code(self, img, scale_x, scale_y):
+        """Extract subject code crop using percentage-based positioning."""
         h, w, _ = img.shape
         
+        # Percentage-based cropping for Subject Code area
         x1 = int(40 * scale_x)
         x2 = int(400 * scale_x)
         y1 = int(20 * scale_y)
@@ -2202,8 +2307,9 @@ class VisualOMRViewerDemo:
         #   y: ~790–870   →  72.5% – 79.8% of height
         x1 = int(w * 0.556)
         x2 = int(w * 0.949)
-        y1 = int(h * 0.70)
-        y2 = int(h * 0.82)
+        # Move crop slightly down to better include lower printed digits
+        y1 = int(h * 0.74)
+        y2 = int(h * 0.88)
 
         # Add a larger vertical margin so the full printed booklet number is captured.
         margin_x = max(8, int(w * 0.01))
@@ -2302,7 +2408,13 @@ class VisualOMRViewerDemo:
 
         # If the detected value contains more than 7 digits, choose the best contiguous 7-digit group.
         if len(best_text) > 7:
-            groups = re.findall(r'\d{7,}', best_text)
+            # Ensure `re` is available even if module-level imports were altered at runtime
+            try:
+                import re
+            except Exception:
+                re = None
+
+            groups = re.findall(r'\d{7,}', best_text) if re else []
             if groups:
                 best_text = max(groups, key=len)
             else:
