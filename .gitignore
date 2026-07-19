@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 build/
 dist/
-*.spec
+#*.spec
 local_master.db
 test_output/
 run_pipeline_test.py
