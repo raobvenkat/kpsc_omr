@@ -66,6 +66,11 @@ STANDARD_OMR_TEMPLATE = {
     "grid_offset_from_box": (19, 208),     # dx, dy relative to handwritten box contour
     "grid_offset_from_header": (124, 350),  # dx, dy relative to header contour
     "grid_hardcoded_fallback": (951, 398),  # absolute coordinates (grid_x, grid_y)
+
+    # Handwritten digit row offsets relative to grid_y (at 1654×1080 reference)
+    # reg_boxes = (330, 430) → offsets = (330-398, 430-398) = (-68, +32)
+    "hw_offset_top": -68,   # px above grid_y where handwritten row starts
+    "hw_offset_bot":  32,   # px below grid_y where handwritten row ends
     
     # Bubble Grid spacing and cell size
     "bubble_grid": {
@@ -134,6 +139,11 @@ BLIND_DISABLED_OMR_TEMPLATE = {
     "grid_offset_from_box": (15, 160),
     "grid_offset_from_header": (100, 280),
     "grid_hardcoded_fallback": (740, 310),
+
+    # Handwritten digit row offsets relative to grid_y
+    # reg_boxes = (250, 320) → grid_y_ref = 310 → offsets = (250-310, 320-310) = (-60, +10)
+    "hw_offset_top": -60,
+    "hw_offset_bot":  10,
     
     # Bubble Grid spacing and cell size
     "bubble_grid": {

@@ -647,133 +647,270 @@ def read_bubbles_decoupled(img, tpl, scale_x, scale_y, barcode_rect):
     return bubble_regno, crop_debug, grid_x, grid_y, f"decoupled_snapped_{score}"
 
 # ──────────────────────────────────────────────────────────
-# WRITTEN REGNO OCR WITH BORDER MASKING (FOR B&W FILES)
+# WRITTEN REGNO OCR
+# Strategy: run EasyOCR on the full handwritten strip first.
+# If it returns a clean 9-digit result use it directly.
+# Otherwise fall back to per-cell MNIST for each column.
 # ──────────────────────────────────────────────────────────
+
+def _preprocess_hw_strip(strip_bgr, is_bw):
+    """Return a list of preprocessed images of the handwritten strip for OCR."""
+    gray = cv2.cvtColor(strip_bgr, cv2.COLOR_BGR2GRAY)
+
+    # Upscale 2× — EasyOCR performs better on larger images
+    scale_up = 2
+    gray_up = cv2.resize(gray, (gray.shape[1] * scale_up, gray.shape[0] * scale_up),
+                         interpolation=cv2.INTER_CUBIC)
+
+    # For color scans: blank out the red/magenta printed template ink so only
+    # the dark handwritten ink remains visible.
+    if not is_bw:
+        hsv = cv2.cvtColor(
+            cv2.resize(strip_bgr, (strip_bgr.shape[1] * scale_up,
+                                   strip_bgr.shape[0] * scale_up),
+                       interpolation=cv2.INTER_CUBIC),
+            cv2.COLOR_BGR2HSV)
+        lower_red1 = np.array([0, 30, 40]);   upper_red1 = np.array([15, 255, 255])
+        lower_red2 = np.array([165, 30, 40]); upper_red2 = np.array([180, 255, 255])
+        red_mask = cv2.bitwise_or(cv2.inRange(hsv, lower_red1, upper_red1),
+                                   cv2.inRange(hsv, lower_red2, upper_red2))
+        # Dilate slightly so fringes are also suppressed
+        red_mask = cv2.dilate(red_mask, np.ones((3, 3), np.uint8), iterations=1)
+        gray_up[red_mask > 0] = 255
+
+    # Otsu threshold
+    _, th_otsu = cv2.threshold(gray_up, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if np.mean(th_otsu) < 127:
+        th_otsu = cv2.bitwise_not(th_otsu)
+
+    # Adaptive threshold — handles uneven illumination better
+    th_adapt = cv2.adaptiveThreshold(
+        gray_up, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY, 31, 10)
+    if np.mean(th_adapt) < 127:
+        th_adapt = cv2.bitwise_not(th_adapt)
+
+    return [th_otsu, th_adapt, gray_up]
+
+
+def _easyocr_on_strip(strip_bgr, is_bw, n_digits):
+    """
+    Run EasyOCR on the full handwritten strip and return the best digit string
+    found, or "" if nothing usable is detected.
+    """
+    reader = get_ocr_reader()
+    preprocessed = _preprocess_hw_strip(strip_bgr, is_bw)
+
+    best_text = ""
+    best_score = -1.0
+
+    for img_variant in preprocessed:
+        try:
+            results = reader.readtext(
+                img_variant,
+                detail=1,
+                allowlist="0123456789",
+                paragraph=False,
+                width_ths=1.5,    # merge horizontally separated digit groups
+                height_ths=0.8,
+                text_threshold=0.3,
+                low_text=0.2,
+                mag_ratio=1.5,
+            )
+        except Exception:
+            continue
+
+        # Concatenate all detected digit runs in left-to-right order
+        if not results:
+            continue
+        results_sorted = sorted(results, key=lambda r: r[0][0][0])  # sort by x of top-left
+        combined = "".join("".join(ch for ch in r[1] if ch.isdigit()) for r in results_sorted)
+        avg_conf = float(np.mean([r[2] for r in results])) if results else 0.0
+
+        if len(combined) == n_digits and avg_conf > best_score:
+            best_score = avg_conf
+            best_text = combined
+        elif len(combined) > len(best_text) and best_text == "":
+            best_text = combined
+
+    return best_text
+
+
+def _classify_cell_mnist(cell_bgr, is_bw, sess, input_name):
+    """
+    Classify one handwritten digit cell using the MNIST ONNX model.
+
+    Key design decisions
+    ─────────────────────
+    • Template ink removal: red/magenta pixels (colour sheets) or blue-ink
+      isolation (B&W sheets) are handled before any thresholding.
+    • Single Otsu threshold on the ink-cleaned, normalised cell — avoids the
+      "max foreground" heuristic that over-segments and fills the interiors of
+      closed digits (0, 6, 8, 9), causing 0→2 and 4→6 errors.
+    • Morphological closing (small kernel) re-connects thin broken strokes
+      without merging separate noise blobs.
+    • Border artefact removal: only components that are BOTH touching the
+      border AND smaller than 3 % of the cell area are erased.  Large
+      digit-sized components that happen to touch the border are preserved.
+    • All significant components (≥ 8 % of total fg) are kept so multi-stroke
+      digits (2, 4, 7) are not reduced to a partial blob.
+    • If the component filter eliminates everything the full cleaned image is
+      used as a fallback.
+    """
+    if cell_bgr is None or cell_bgr.size == 0:
+        return " "
+
+    gray = cv2.cvtColor(cell_bgr, cv2.COLOR_BGR2GRAY)
+    hc, wc = gray.shape[:2]
+
+    # ── Step 1: isolate handwritten ink ───────────────────────────────────
+    if not is_bw:
+        hsv_c = cv2.cvtColor(cell_bgr, cv2.COLOR_BGR2HSV)
+        r1 = cv2.inRange(hsv_c, np.array([0,  30, 40]), np.array([15, 255, 255]))
+        r2 = cv2.inRange(hsv_c, np.array([165,30, 40]), np.array([180,255, 255]))
+        red_mask  = cv2.dilate(cv2.bitwise_or(r1, r2), np.ones((2, 2), np.uint8), 1)
+        gray_clean = gray.copy()
+        gray_clean[red_mask > 0] = 255          # white out template ink
+    else:
+        hsv_c  = cv2.cvtColor(cell_bgr, cv2.COLOR_BGR2HSV)
+        b_mask = cv2.inRange(hsv_c, np.array([90,40,40]), np.array([140,255,255]))
+        if np.sum(b_mask > 0) > 15:
+            gray_clean = np.full_like(gray, 255)
+            gray_clean[b_mask > 0] = gray[b_mask > 0]
+        else:
+            gray_clean = gray.copy()
+
+    # ── Step 2: trim cell border (avoids printed divider lines) ───────────
+    trim_y = max(1, int(hc * 0.06))
+    trim_x = max(1, int(wc * 0.06))
+    trimmed = gray_clean[trim_y: hc - trim_y, trim_x: wc - trim_x]
+    ht, wt  = trimmed.shape
+
+    mn, mx, _, _ = cv2.minMaxLoc(trimmed)
+    if (mx - mn) < 25:          # blank cell — nothing written
+        return " "
+
+    # ── Step 3: Otsu threshold on normalised cell ─────────────────────────
+    # Normalise so the ink always spans the full 0–255 range regardless of
+    # how dark/light the scan is, then apply a single Otsu threshold.
+    # Do NOT use adaptive thresholding here: it amplifies background texture
+    # and fills the interiors of closed digits (0, 6, 8, 9).
+    norm = cv2.normalize(trimmed, None, 0, 255, cv2.NORM_MINMAX)
+    _, binary_inv = cv2.threshold(norm, 0, 255,
+                                  cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    # ── Step 4: morphological closing — re-join broken thin strokes ───────
+    # A 2×2 kernel is large enough to bridge sub-pixel gaps without merging
+    # separate blobs or filling the centres of closed digits.
+    close_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+    binary_inv = cv2.morphologyEx(binary_inv, cv2.MORPH_CLOSE, close_k)
+
+    # ── Step 5: remove tiny border-touching noise ─────────────────────────
+    min_keep = max(6, int(ht * wt * 0.03))     # 3 % of cell area
+    n0, lbl0, st0, _ = cv2.connectedComponentsWithStats(binary_inv, connectivity=8)
+    cleaned = np.zeros_like(binary_inv)
+    for k in range(1, n0):
+        area = st0[k, cv2.CC_STAT_AREA]
+        lx   = st0[k, cv2.CC_STAT_LEFT];  ty = st0[k, cv2.CC_STAT_TOP]
+        rw   = st0[k, cv2.CC_STAT_WIDTH]; rh = st0[k, cv2.CC_STAT_HEIGHT]
+        on_border = (lx <= 1) or (ty <= 1) or \
+                    (lx + rw >= wt - 1) or (ty + rh >= ht - 1)
+        if not (on_border and area < min_keep):
+            cleaned[lbl0 == k] = 255
+
+    if np.count_nonzero(cleaned) < 8:
+        cleaned = binary_inv        # fallback: nothing useful was erased
+
+    # ── Step 6: keep all ink components that form part of the digit ───────
+    # Threshold: a component must account for ≥ 8 % of the total foreground.
+    # This keeps both strokes of '4', '2', '7' etc. while discarding isolated
+    # specks that survived step 5.
+    n1, lbl1, st1, _ = cv2.connectedComponentsWithStats(cleaned, connectivity=8)
+    if n1 <= 1:
+        return " "
+    total_fg = max(1, sum(st1[k, cv2.CC_STAT_AREA] for k in range(1, n1)))
+    digit_mask = np.zeros_like(cleaned)
+    for k in range(1, n1):
+        if st1[k, cv2.CC_STAT_AREA] / total_fg >= 0.08:
+            digit_mask[lbl1 == k] = 255
+
+    if np.count_nonzero(digit_mask) < 8:
+        digit_mask = cleaned        # fallback: filter was too aggressive
+
+    # ── Step 7: tight bounding box → 28×28 canvas → MNIST ────────────────
+    ys, xs = np.where(digit_mask > 0)
+    if len(ys) == 0:
+        return " "
+
+    crop = digit_mask[int(np.min(ys)):int(np.max(ys)) + 1,
+                      int(np.min(xs)):int(np.max(xs)) + 1]
+    ch_c, cw_c = crop.shape
+    if ch_c == 0 or cw_c == 0:
+        return " "
+
+    # Scale to fit inside 20×20, preserving aspect ratio
+    if ch_c > cw_c:
+        new_h, new_w = 20, max(1, int(cw_c * 20.0 / ch_c))
+    else:
+        new_w, new_h = 20, max(1, int(ch_c * 20.0 / cw_c))
+
+    resized = cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    canvas  = np.zeros((28, 28), dtype=np.float32)
+    dy = (28 - new_h) // 2
+    dx = (28 - new_w) // 2
+    canvas[dy:dy + new_h, dx:dx + new_w] = resized.astype(np.float32) / 255.0
+
+    outputs = sess.run(None, {input_name: canvas.reshape(1, 1, 28, 28)})
+    return str(int(np.argmax(outputs[0])))
+
+
 def read_handwritten_regno(img, tpl, scale_x, scale_y, grid_x, grid_y, is_bw):
-    sess = get_mnist_session()
-    input_name = sess.get_inputs()[0].name
+    """
+    Read the 9-digit handwritten register number above the bubble grid.
+
+    The handwritten digit row is located relative to grid_y — the dynamically
+    detected bubble-grid origin — which is accurate across all scan resolutions.
+
+    At the 1654×1080 reference:
+      grid_y (hardcoded fallback) = 398
+      reg_boxes top               = 330  →  offset = -68 from grid_y
+      reg_boxes bottom            = 430  →  offset = +32 from grid_y
+
+    These offsets are applied scaled so they work at any resolution.
+
+    EasyOCR is NOT used: it reads Kannada instruction text above the digit
+    boxes as digit characters, producing garbage output.
+    """
     h, w, _ = img.shape
-    b_conf = tpl["bubble_grid"]
-    
+    b_conf      = tpl["bubble_grid"]
+    n_cols      = b_conf["cols"]
     col_spacing = b_conf["col_spacing"] * scale_x
-    col_start = b_conf["col_start_offset"] * scale_x
-    
-    box_cy = grid_y - int(26 * scale_y)
-    box_h = int(45 * scale_y)
-    box_w = int(col_spacing * 0.85)
-    trim_ratio = 0.10
+    col_start   = b_conf["col_start_offset"] * scale_x
+
+    sess       = get_mnist_session()
+    input_name = sess.get_inputs()[0].name
+
+    # Vertical band: derived from grid_y with template-calibrated offsets.
+    # offset_top  = reg_boxes[0] - grid_y_ref  = 330 - 398 = -68
+    # offset_bot  = reg_boxes[1] - grid_y_ref  = 430 - 398 = +32
+    # A small extra margin is added to avoid clipping tall digit ascenders.
+    offset_top = tpl.get("hw_offset_top", -68)   # px above grid_y at reference
+    offset_bot = tpl.get("hw_offset_bot",  +32)  # px below grid_y at reference
+    margin     = 6                                # extra safety margin
+
+    row_y0 = max(0, grid_y + int(offset_top * scale_y) - margin)
+    row_y1 = min(h, grid_y + int(offset_bot * scale_y) + margin)
+
+    box_w = int(col_spacing * 0.90)
 
     digits = []
-    for i in range(b_conf["cols"]):
+    for i in range(n_cols):
         cx = compute_bubble_col_x(grid_x, col_start, col_spacing, i)
-        x1 = cx - box_w // 2
-        x2 = cx + box_w // 2
-        y1 = box_cy - box_h // 2
-        y2 = box_cy + box_h // 2
-
-        cell_bgr = img[max(0, y1):min(h, y2), max(0, x1):min(w, x2)]
-        if cell_bgr.size == 0:
-            digits.append(' ')
-            continue
-
-        gray = cv2.cvtColor(cell_bgr, cv2.COLOR_BGR2GRAY)
-        hc, wc = gray.shape[:2]
-        
-        # Color masking
-        if not is_bw:
-            hsv_crop = cv2.cvtColor(cell_bgr, cv2.COLOR_BGR2HSV)
-            lower_red1 = np.array([0, 30, 40]); upper_red1 = np.array([15, 255, 255])
-            lower_red2 = np.array([165, 30, 40]); upper_red2 = np.array([180, 255, 255])
-            red_mask = cv2.bitwise_or(cv2.inRange(hsv_crop, lower_red1, upper_red1),
-                                       cv2.inRange(hsv_crop, lower_red2, upper_red2))
-            gray_clean = gray.copy()
-            gray_clean[red_mask > 0] = 255
-        else:
-            # Blue ink filter for B&W
-            hsv_crop = cv2.cvtColor(cell_bgr, cv2.COLOR_BGR2HSV)
-            lower_blue = np.array([90, 40, 40])
-            upper_blue = np.array([140, 255, 255])
-            blue_mask = cv2.inRange(hsv_crop, lower_blue, upper_blue)
-            if np.sum(blue_mask > 0) > 15:
-                gray_clean = np.ones_like(gray) * 255
-                gray_clean[blue_mask > 0] = gray[blue_mask > 0]
-            else:
-                gray_clean = gray.copy()
-
-        margin_y = max(1, int(hc * trim_ratio))
-        margin_x = max(1, int(wc * trim_ratio))
-        gray_trimmed = gray_clean[margin_y:-margin_y, margin_x:-margin_x]
-        h_t, w_t = gray_trimmed.shape
-
-        min_val, max_val, _, _ = cv2.minMaxLoc(gray_trimmed)
-        contrast = max_val - min_val
-        if contrast < 40:
-            digits.append(" ")
-            continue
-
-        gray_norm = cv2.normalize(gray_trimmed, None, 0, 255, cv2.NORM_MINMAX)
-        _, binary_inv = cv2.threshold(gray_norm, 160, 255, cv2.THRESH_BINARY_INV)
-
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(binary_inv, connectivity=8)
-        if num_labels <= 1:
-            digits.append(" ")
-            continue
-            
-        erase_mask = np.zeros_like(binary_inv)
-        for idx in range(1, num_labels):
-            cx_comp = stats[idx, cv2.CC_STAT_LEFT]
-            cy_comp = stats[idx, cv2.CC_STAT_TOP]
-            w_comp = stats[idx, cv2.CC_STAT_WIDTH]
-            h_comp = stats[idx, cv2.CC_STAT_HEIGHT]
-            touches = (cx_comp <= 1) or (cy_comp <= 1) or (cx_comp + w_comp >= w_t - 1) or (cy_comp + h_comp >= h_t - 1)
-            if touches:
-                erase_mask[labels == idx] = 255
-                
-        binary_clean = binary_inv.copy()
-        binary_clean[erase_mask > 0] = 0
-
-        num_labels2, labels2, stats2, _ = cv2.connectedComponentsWithStats(binary_clean, connectivity=8)
-        if num_labels2 <= 1:
-            digits.append(" ")
-            continue
-
-        largest_label = 1 + np.argmax(stats2[1:, cv2.CC_STAT_AREA])
-        largest_area = stats2[largest_label, cv2.CC_STAT_AREA]
-        if largest_area < 8:
-            digits.append(" ")
-            continue
-            
-        cell_mask = (labels2 == largest_label).astype(np.uint8) * 255
-        y_indices, x_indices = np.where(cell_mask > 0)
-        if len(y_indices) == 0 or len(x_indices) == 0:
-            digits.append(" ")
-            continue
-
-        y_min_idx, y_max_idx = np.min(y_indices), np.max(y_indices)
-        x_min_idx, x_max_idx = np.min(x_indices), np.max(x_indices)
-
-        digit_crop = cell_mask[y_min_idx:y_max_idx+1, x_min_idx:x_max_idx+1]
-        h_c, w_c = digit_crop.shape
-        if h_c == 0 or w_c == 0:
-            digits.append(" ")
-            continue
-
-        if h_c > w_c:
-            new_h = 20
-            new_w = max(1, int(w_c * (20.0 / h_c)))
-        else:
-            new_w = 20
-            new_h = max(1, int(h_c * (20.0 / w_c)))
-
-        digit_resized = cv2.resize(digit_crop, (new_w, new_h), interpolation=cv2.INTER_AREA)
-        canvas = np.zeros((28, 28), dtype=np.float32)
-        dy = (28 - new_h) // 2
-        dx = (28 - new_w) // 2
-        canvas[dy:dy+new_h, dx:dx+new_w] = digit_resized.astype(np.float32) / 255.0
-
-        outputs = sess.run(None, {input_name: canvas.reshape(1, 1, 28, 28)})
-        predicted_digit = int(np.argmax(outputs[0]))
-        digits.append(str(predicted_digit))
+        x0 = max(0, cx - box_w // 2)
+        x1 = min(w, cx + box_w // 2)
+        cell_bgr = img[row_y0:row_y1, x0:x1]
+        digits.append(_classify_cell_mnist(cell_bgr, is_bw, sess, input_name))
 
     return "".join(digits)
 
@@ -1088,21 +1225,22 @@ def process_single_sheet_for_demo(img_path):
     inv_sig_y_end = min(h, int(grid_y + 252 * scale_y))
     inv_sig_crop = img[inv_sig_y_start:inv_sig_y_end, inv_sig_x_start:inv_sig_x_end]
     
-    # 4. Handwritten Box Crop
-    # Calculate box position for handwritten RegNo
-    box_cy = int(grid_y - 38 * scale_y)
-    box_h = int(45 * scale_y)
+    # 4. Handwritten Box Crop — coordinates must exactly match read_handwritten_regno
     col_spacing = tpl["bubble_grid"]["col_spacing"] * scale_x
-    col_start = tpl["bubble_grid"]["col_start_offset"] * scale_x
-    box_w = int(8 * col_spacing)
-    hw_x0 = int(grid_x + col_start - box_w//2 -10)
-    hw_x1 = int(grid_x + col_start + 8 * col_spacing + box_w//2 )
-    hw_y0 = int(box_cy - box_h//2 - 5)
-    hw_y1 = int(box_cy + box_h//2 + 5)
-    hw_x0 = max(0, hw_x0) 
-    hw_x1 = min(w, hw_x1)
-    hw_y0 = max(0, hw_y0)
-    hw_y1 = min(h, hw_y1) 
+    col_start   = tpl["bubble_grid"]["col_start_offset"] * scale_x
+    n_cols_hw   = tpl["bubble_grid"]["cols"]
+
+    offset_top = tpl.get("hw_offset_top", -68)
+    offset_bot = tpl.get("hw_offset_bot",  +32)
+    margin_hw  = 6
+    hw_y0 = max(0, grid_y + int(offset_top * scale_y) - margin_hw)
+    hw_y1 = min(h, grid_y + int(offset_bot * scale_y) + margin_hw)
+
+    cell_half_w = int(col_spacing * 0.90) // 2
+    first_cx_hw = compute_bubble_col_x(grid_x, col_start, col_spacing, 0)
+    last_cx_hw  = compute_bubble_col_x(grid_x, col_start, col_spacing, n_cols_hw - 1)
+    hw_x0 = max(0, first_cx_hw - cell_half_w - 5)
+    hw_x1 = min(w, last_cx_hw  + cell_half_w + 5)
     reg_box_crop = img[hw_y0:hw_y1, hw_x0:hw_x1]
     
     # Check ink on signature crops
