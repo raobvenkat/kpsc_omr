@@ -104,43 +104,47 @@ def straighten_sheet_using_corner_lines(img):
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     
     # Red hue in HSV: 0-10 and 170-180 (wraps around)
-    lower_red1 = np.array([0, 50, 50])
-    upper_red1 = np.array([10, 255, 255])
-    lower_red2 = np.array([170, 50, 50])
+    # Expanded to capture more red variations
+    lower_red1 = np.array([0, 30, 40])
+    upper_red1 = np.array([12, 255, 255])
+    lower_red2 = np.array([168, 30, 40])
     upper_red2 = np.array([180, 255, 255])
     
     mask_red1 = cv2.inRange(hsv, lower_red1, upper_red1)
     mask_red2 = cv2.inRange(hsv, lower_red2, upper_red2)
     mask_red = cv2.bitwise_or(mask_red1, mask_red2)
     
-    # Dilate to connect nearby red pixels
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    mask_red = cv2.dilate(mask_red, kernel, iterations=2)
+    # Dilate to connect nearby red pixels and strengthen red line signals
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    mask_red = cv2.dilate(mask_red, kernel, iterations=3)
     
-    # Detect lines in red mask
+    # Detect lines in red mask with relaxed parameters for better detection
     lines_red = cv2.HoughLinesP(
         mask_red,
         1,
         np.pi / 180,
-        threshold=80,
-        minLineLength=300,
-        maxLineGap=15
+        threshold=50,
+        minLineLength=250,
+        maxLineGap=20
     )
     
     # If red lines found, use them; otherwise fall back to grayscale detection
     if lines_red is not None and len(lines_red) > 0:
         lines = lines_red
     else:
-        # Fallback: grayscale line detection
+        # Fallback: grayscale line detection with improved parameters
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)
+        # Dilate to strengthen line signals
+        kernel_fb = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        thresh = cv2.dilate(thresh, kernel_fb, iterations=2)
         lines = cv2.HoughLinesP(
             thresh,
             1,
             np.pi / 180,
-            threshold=100,
-            minLineLength=400,
-            maxLineGap=20
+            threshold=60,
+            minLineLength=350,
+            maxLineGap=25
         )
 
     if lines is None or len(lines) == 0:
@@ -193,9 +197,9 @@ def straighten_sheet_using_corner_lines(img):
         )
     )
 
-    # Only apply rotation if the angle is significant (> 1.5 degrees)
-    # This avoids over-correcting already-straight sheets due to minor line detection errors
-    if abs(rotation_angle) < 1.5:
+    # Only apply rotation if the angle is significant (> 0.5 degrees)
+    # This catches rotations like -5 degrees while still avoiding micro-adjustments
+    if abs(rotation_angle) < 0.5:
         # Sheet is already straight; return identity transformation
         M = cv2.getRotationMatrix2D(center, 0.0, 1.0)
         return img, M, 0.0, center
@@ -1086,14 +1090,14 @@ def process_single_sheet_for_demo(img_path):
     col_spacing = tpl["bubble_grid"]["col_spacing"] * scale_x
     col_start = tpl["bubble_grid"]["col_start_offset"] * scale_x
     box_w = int(8 * col_spacing)
-    hw_x0 = int(grid_x + col_start - box_w//2 - 10)
-    hw_x1 = int(grid_x + col_start + 8 * col_spacing + box_w//2 + 10)
+    hw_x0 = int(grid_x + col_start - box_w//2 -10)
+    hw_x1 = int(grid_x + col_start + 8 * col_spacing + box_w//2 )
     hw_y0 = int(box_cy - box_h//2 - 5)
     hw_y1 = int(box_cy + box_h//2 + 5)
-    hw_x0 = max(0, hw_x0)
+    hw_x0 = max(0, hw_x0) 
     hw_x1 = min(w, hw_x1)
     hw_y0 = max(0, hw_y0)
-    hw_y1 = min(h, hw_y1)
+    hw_y1 = min(h, hw_y1) 
     reg_box_crop = img[hw_y0:hw_y1, hw_x0:hw_x1]
     
     # Check ink on signature crops
@@ -2214,29 +2218,111 @@ class VisualOMRViewerDemo:
     def extract_subject_code(self, img, scale_x, scale_y):
         """Extract subject code crop using percentage-based positioning."""
         h, w, _ = img.shape
-        
+
         # Percentage-based cropping for Subject Code area
-        x1 = int(40 * scale_x)
-        x2 = int(400 * scale_x)
-        y1 = int(20 * scale_y)
-        y2 = int(140 * scale_y)
-        
+        x1 = int(20 * scale_x)
+        x2 = int(500 * scale_x)
+        y1 = int(18 * scale_y)
+        y2 = int(180 * scale_y)
+
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(w, x2)
+        y2 = min(h, y2)
+
         crop = img[y1:y2, x1:x2]
-        
+        if crop is None or crop.size == 0:
+            return "", crop
+
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
-        _, th = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
-        
+        gray_blur = cv2.GaussianBlur(gray, (3, 3), 0)
+        _, th_gray = cv2.threshold(gray_blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # Build red ink mask for red or magenta printed subject codes.
+        hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+        lower_red1 = np.array([0, 30, 40]); upper_red1 = np.array([15, 255, 255])
+        lower_red2 = np.array([165, 30, 40]); upper_red2 = np.array([180, 255, 255])
+        lower_magenta = np.array([140, 25, 40]); upper_magenta = np.array([165, 255, 255])
+        red_mask = cv2.bitwise_or(cv2.inRange(hsv, lower_red1, upper_red1), cv2.inRange(hsv, lower_red2, upper_red2))
+        magenta_mask = cv2.inRange(hsv, lower_magenta, upper_magenta)
+        red_mask = cv2.bitwise_or(red_mask, magenta_mask)
+        red_mask = cv2.morphologyEx(red_mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+
+        red_only = cv2.bitwise_and(gray_blur, gray_blur, mask=red_mask)
+        _, th_red = cv2.threshold(red_only, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+        # Also create a red-difference variant for strong red text.
+        red_channel = crop[:, :, 2].astype(np.int16)
+        gb_max = np.maximum(crop[:, :, 0].astype(np.int16), crop[:, :, 1].astype(np.int16))
+        red_diff = np.clip(red_channel - gb_max, 0, 255).astype(np.uint8)
+        red_diff_blur = cv2.GaussianBlur(red_diff, (3, 3), 0)
+        _, th_red_diff = cv2.threshold(red_diff_blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        th_red_diff = cv2.bitwise_not(th_red_diff)
+
         reader = get_ocr_reader()
-        results = reader.readtext(th, detail=0)
+        candidate_images = [th_red, th_red_diff, th_gray, crop]
+        best_digits = ""
+        best_score = 0.0
 
-        # Combine all detected text
-        text = " ".join(results)
-        
-        # Extract only digits and keep the first three digits
-        digits = ''.join(filter(str.isdigit, text))
-        digits = digits[:3]
+        def evaluate_text(text, confidence):
+            digits = ''.join(ch for ch in text if ch.isdigit())
+            results = []
+            if len(digits) >= 3:
+                for i in range(len(digits) - 2):
+                    chunk = digits[i:i + 3]
+                    score = confidence + (1.0 if len(chunk) == 3 else 0.0)
+                    results.append((chunk, score))
+            elif digits:
+                results.append((digits, confidence * 0.5))
+            return results
 
-        return digits.strip(), crop
+        for candidate in candidate_images:
+            if candidate is None or candidate.size == 0:
+                continue
+            try:
+                results = reader.readtext(
+                    candidate,
+                    detail=1,
+                    allowlist="0123456789",
+                    paragraph=False,
+                    contrast_ths=0.05,
+                    text_threshold=0.2,
+                    low_text=0.2,
+                    link_threshold=0.25,
+                    mag_ratio=1.5
+                )
+            except Exception:
+                results = []
+
+            for _, text, confidence in results:
+                for digits, score in evaluate_text(text, float(confidence or 0.0)):
+                    if len(digits) == 3 and score > best_score:
+                        best_digits = digits
+                        best_score = score
+
+        if best_score < 1.0:
+            try:
+                fallback = reader.readtext(crop, detail=1, allowlist="0123456789", paragraph=False)
+            except Exception:
+                fallback = []
+            for _, text, confidence in fallback:
+                for digits, score in evaluate_text(text, float(confidence or 0.0)):
+                    if len(digits) == 3 and score > best_score:
+                        best_digits = digits
+                        best_score = score
+
+        if not best_digits:
+            # Final fallback: use any contiguous digit group from the original crop text.
+            try:
+                fallback = reader.readtext(crop, detail=0)
+            except Exception:
+                fallback = []
+            full_text = " ".join(fallback)
+            matches = re.findall(r"\d{3}", full_text)
+            if matches:
+                best_digits = matches[0]
+
+        return best_digits.strip(), crop
 
     @staticmethod
     def _prefer_curved_two_over_nine(candidate, gray_up):
