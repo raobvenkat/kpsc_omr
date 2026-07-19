@@ -418,11 +418,16 @@ def read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw):
         align_method = "perfect_snapped_bw"
     else:
         box = find_handwritten_box_color(img, tpl, scale_x)
-        bx, by, bw, bh = box
-        grid_x = bx + int(19 * scale_x)
-        grid_y = by + int(208 * scale_y)
-        align_method = "box_direct_color"
-        
+        if box is not None:
+            grid_x, grid_y = align_grid_perfect(img, tpl, scale_x, scale_y, box, is_bw)
+            align_method = "box_snapped_color"
+        else:
+            # Fallback to the legacy static offset if the handwritten box cannot be detected.
+            bx, by, bw, bh = 0, 0, 0, 0
+            grid_x = int(19 * scale_x)
+            grid_y = int(208 * scale_y)
+            align_method = "box_direct_color_fallback"
+
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     b_conf = tpl["bubble_grid"]
     col_spacing = b_conf["col_spacing"] * scale_x
@@ -1952,7 +1957,15 @@ class VisualOMRViewerDemo:
             self.edit_barcode.insert(0, barcode)
             
             self.edit_bubble.delete(0, tk.END)
-            self.edit_bubble.insert(0, bubble)
+            # Normalize bubble display: prefer contiguous digits for readability
+            try:
+                bubble_display = ''.join(ch for ch in (bubble or "") if ch.isdigit())
+            except Exception:
+                bubble_display = ''
+            if not bubble_display:
+                # Fallback: collapse consecutive whitespace to a single space
+                bubble_display = ' '.join((bubble or "").split())
+            self.edit_bubble.insert(0, bubble_display)
             
             self.edit_hw.delete(0, tk.END)
             self.edit_hw.insert(0, hw)
