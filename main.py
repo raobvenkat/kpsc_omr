@@ -912,7 +912,8 @@ class MainApplication:
                 "Counter Foil Data Edit",
                 "Nominal Roll 1 Data Edit",
                 "Nominal Roll 2 Data Edit",
-                "Copy Discrepancy Sheets"
+                "Copy Discrepancy Sheets",
+                "Import Master Data",
             ],
             self._on_discrepancy_selected,
         )
@@ -1092,6 +1093,11 @@ class MainApplication:
         if selection == "Copy Discrepancy Sheets":
             self.open_copy_discrepancy_sheets()
             return
+
+        if selection == "Import Master Data":
+            self.open_import_master_data()
+            return
+
         self.open_pending_discrepancy(selection)
 
     def _on_download_report_selected(self, _event=None) -> None:
@@ -1594,6 +1600,15 @@ class MainApplication:
             "CopyDiscrepancySheets",
             "Copy Discrepancy Sheets",
             user_id
+        )
+
+    def open_import_master_data(self) -> None:
+        user_id = self.current_user.user_id if self.current_user is not None else 1
+        self._open_module_from_import(
+            "ImportMasterData",
+            "ImportMasterData",
+            "Import Master Data",
+            user_id,
         )
 
 

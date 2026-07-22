@@ -14,14 +14,31 @@ INVIGILATOR_BOX_TYPE1 = {
 INVIGILATOR_BOX_TYPE2 = {
     "x0_pct": 0.166,
     "x1_pct": 0.422,
-    "y0_pct": 0.905,
-    "y1_pct": 0.927,
+    "y0_pct": 0.930,   # starts below "Name of the Invigilator" label + divider line
+    "y1_pct": 0.970,   # bottom of the signature cell
+}
+# Type-2 fit-to-page variant — invigilator signature occupies the left
+# footer box which spans a larger vertical band on the compressed layout.
+INVIGILATOR_BOX_TYPE2_FITPAGE = {
+    "x0_pct": 0.030,
+    "x1_pct": 0.360,
+    "y0_pct": 0.600,
+    "y1_pct": 0.820,
 }
 
 
-def get_invigilator_signature_box(sheet_type, w, h):
-    """Return (x0, y0, x1, y1) pixel bounds for invigilator ink detection."""
-    box = INVIGILATOR_BOX_TYPE1 if sheet_type == 1 else INVIGILATOR_BOX_TYPE2
+def get_invigilator_signature_box(sheet_type, w, h, sheet_subtype="normal"):
+    """Return (x0, y0, x1, y1) pixel bounds for invigilator ink detection.
+
+    sheet_type    : 1 = OMR sheet, 2 = QCAB sheet
+    sheet_subtype : 'normal' or 'fitpage' (only relevant for sheet_type == 2)
+    """
+    if sheet_type == 1:
+        box = INVIGILATOR_BOX_TYPE1
+    elif sheet_subtype == "fitpage":
+        box = INVIGILATOR_BOX_TYPE2_FITPAGE
+    else:
+        box = INVIGILATOR_BOX_TYPE2
     return (
         int(w * box["x0_pct"]),
         int(h * box["y0_pct"]),

@@ -196,8 +196,8 @@ class AttendanceViewerDemo:
         self.type_combo = ttk.Combobox(
             top_frame,
             values=["Attendance Sheet 1 (OMR)", "Attendance Sheet 2 (QCAB)"],
-            state="readonly", width=25, font=("Segoe UI", fs(10)))
-        self.type_combo.current(0)
+            state="readonly", width=42, font=("Segoe UI", fs(10)))
+        self.type_combo.current(1)
         self.type_combo.pack(side="left", padx=px(10), pady=px(8))
         self.type_combo.bind("<<ComboboxSelected>>", lambda e: self.on_sheet_type_changed())
 
@@ -231,6 +231,11 @@ class AttendanceViewerDemo:
                                           command=self.process_all_sheets_to_mssql,
                                           width=12)
         self.process_all_btn.pack(side="right", padx=px(5), pady=px(8))
+
+        self.bulk_excel_btn = ttk.Button(top_frame, text="Bulk to Excel",
+                                         command=self.start_bulk_excel_process,
+                                         width=14)
+        self.bulk_excel_btn.pack(side="right", padx=px(5), pady=px(8))
 
         # ── Header info bar ───────────────────────────────────────────────────
         self.header_frame = tk.Frame(self.root, bg="#2b2b36", bd=0)
@@ -727,11 +732,28 @@ class AttendanceViewerDemo:
                 detected_border = detect_left_border2(img, expected_border)
                 shift = detected_border - expected_border if abs(detected_border - expected_border) <= 55 else 0
                 
-                y_centers = [580, 815, 1049, 1283, 1521, 1754]
-                px_offset, ax_offset = 469, 524
-                sig_x0, sig_x1 = 380, 850
-                reg_x0, reg_x1 = 760, 950
-                qcab_x0, qcab_x1 = 1180, 1490
+                from core.nominal_roll_type2 import detect_top_border
+                detected_top = detect_top_border(img)
+                if "Normal" in choice or ("Auto" in choice and detected_top > 400):
+                    y_centers_base = [561, 803, 1046, 1288, 1531, 1773]
+                    y_shift = detected_top - 454
+                    if abs(y_shift) > 60:
+                        y_shift = 0
+                    px_offset, ax_offset = 469, 524
+                    sig_x0, sig_x1 = 380, 850
+                    reg_x0, reg_x1 = 760, 1000
+                    qcab_x0, qcab_x1 = 1300, 1640
+                else:
+                    y_centers_base = [582, 804, 1028, 1249, 1472, 1696]
+                    y_shift = detected_top - 350
+                    if abs(y_shift) > 60:
+                        y_shift = 0
+                    px_offset, ax_offset = 459, 514
+                    sig_x0, sig_x1 = 380, 850
+                    reg_x0, reg_x1 = 728, 938
+                    qcab_x0, qcab_x1 = 1120, 1430
+                    
+                y_centers = [yc + y_shift for yc in y_centers_base]
                 
             # Load from CSV database or process
             needs_reprocess = False
@@ -773,7 +795,8 @@ class AttendanceViewerDemo:
                 if is_type1:
                     records, header = process_attendance_sheet1(img_path, reader)
                 else:
-                    records, header = process_attendance_sheet2(img_path, reader)
+                    from core.nominal_roll_type2 import process_attendance_sheet2_relative
+                    records, header = process_attendance_sheet2_relative(img_path, reader)
                     
                 center_code = header.get("center_code", "")
                 subcenter_code = header.get("subcenter_code", "")
@@ -829,37 +852,101 @@ class AttendanceViewerDemo:
                 # Row indicator
                 cv2.putText(annotated, f"Row {idx+1}", (10, yc), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 230, 255), 2)
                 
-                # Present bubble (green)
-                px = px_offset + shift
-                cv2.circle(annotated, (px, yc), 12, (0, 255, 0), 2)
+                # Check for dynamic coordinates in record
+                record = records[idx] if idx < len(records) else None
+                coords = record.get("coords") if record else None
                 
-                # Absent bubble (red)
-                ax = ax_offset + shift
-                cv2.circle(annotated, (ax, yc), 12, (0, 255, 255), 2)
-                
-                # Signature box (magenta)
-                if is_type1:
-                    cv2.rectangle(annotated, (sig_x0 + shift, yc + 25), (sig_x1 + shift, yc + 105), (255, 0, 255), 2)
+                if coords and "reg" in coords:
+                    # Dynamic label-relative drawing
+                    ry0, ry1, rx0, rx1 = coords["reg"]
+                    qy0, qy1, qx0, qx1 = coords["qcab"]
+                    sy0, sy1, sx0, sx1 = coords["sig"]
+                    py, px = coords["bubble_p"]
+                    ay, ax = coords["bubble_a"]
+                    
+                    # Present/Absent bubbles — color shows which template was detected:
+                    #   BLUE  (P) / CYAN  (A) = Fit-to-Page layout
+                    #   GREEN (P) / YELLOW(A) = Normal layout
+                    is_normal_layout = coords.get("is_normal", False)
+                    p_color = (0, 255, 0)   if is_normal_layout else (255, 100, 0)
+                    a_color = (0, 255, 255) if is_normal_layout else (255, 255, 0)
+                    cv2.circle(annotated, (px, py), 12, p_color, 2)
+                    cv2.circle(annotated, (ax, ay), 12, a_color, 2)
+                    # Label which template was used
+                    label = "N" if is_normal_layout else "F"
+                    cv2.putText(annotated, label, (px - 20, py - 14),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, p_color, 1)
+                    
+                    # Signature box (magenta)
+                    cv2.rectangle(annotated, (sx0, sy0), (sx1, sy1), (255, 0, 255), 2)
+                    
+                    # Registration box (yellow)
+                    cv2.rectangle(annotated, (rx0, ry0), (rx1, ry1), (255, 255, 0), 2)
+                    
+                    # QCAB box (cyan)
+                    cv2.rectangle(annotated, (qx0, qy0), (qx1, qy1), (0, 255, 255), 2)
                 else:
-                    cv2.rectangle(annotated, (sig_x0 + shift, yc + 40), (sig_x1 + shift, yc + 130), (255, 0, 255), 2)
-                
-                # Reg/OMR box (cyan/yellow)
-                if is_type1:
-                    # QP Version Code box (orange)
-                    cv2.rectangle(annotated, (530 + shift, yc - 30), (810 + shift, yc + 30), (0, 165, 255), 2)
-                    qpvc_val = records[idx].get("qpvc", "") if idx < len(records) else ""
-                    cv2.putText(annotated, f"QPVC:{qpvc_val}", (535 + shift, yc - 35),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 1)
-                    # Registration No box (yellow)
-                    cv2.rectangle(annotated, (reg_x0 + shift, yc - 25), (reg_x1 + shift, yc + 25), (255, 255, 0), 2)
-                    # OMR No box (cyan)
-                    cv2.rectangle(annotated, (omr_x0 + shift, yc - 25), (omr_x1 + shift, yc + 25), (0, 255, 255), 2)
-                else:
-                    # Registration No and QCAB Serial No boxes
-                    cv2.rectangle(annotated, (reg_x0 + shift, yc - 25), (reg_x1 + shift, yc + 25), (255, 255, 0), 2)
-                    cv2.rectangle(annotated, (qcab_x0 + shift, yc - 20), (qcab_x1 + shift, yc + 30), (0, 255, 255), 2)
+                    # Determine bubble Y center for template modes
+                    bubble_y = yc
+                    if not is_type1:
+                        from core.nominal_roll_type2 import detect_top_border
+                        detected_top = detect_top_border(img)
+                        choice = self.type_combo.get()
+                        if "Normal" in choice or ("Auto" in choice and detected_top > 400):
+                            bubble_y = yc - 38
 
-            inv_x0, inv_y0, inv_x1, inv_y1 = self.get_invigilator_signature_box(w, h)
+                    # Present bubble (green)
+                    px = px_offset + shift
+                    cv2.circle(annotated, (px, bubble_y), 12, (0, 255, 0), 2)
+                    
+                    # Absent bubble (red)
+                    ax = ax_offset + shift
+                    cv2.circle(annotated, (ax, bubble_y), 12, (0, 255, 255), 2)
+                    
+                    # Signature box (magenta)
+                    if is_type1:
+                        cv2.rectangle(annotated, (sig_x0 + shift, yc + 25), (sig_x1 + shift, yc + 105), (255, 0, 255), 2)
+                    else:
+                        cv2.rectangle(annotated, (sig_x0 + shift, yc + 35), (sig_x1 + shift, yc + 110), (255, 0, 255), 2)
+                    
+                    # Reg/OMR box (cyan/yellow)
+                    if is_type1:
+                        # QP Version Code box (orange)
+                        cv2.rectangle(annotated, (830 + shift, yc + 45), (1030 + shift, yc + 105), (0, 165, 255), 2)
+                        qpvc_val = records[idx].get("qpvc", "") if idx < len(records) else ""
+                        cv2.putText(annotated, f"QPVC:{qpvc_val}", (835 + shift, yc + 40),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 1)
+                        # Registration No box (yellow)
+                        cv2.rectangle(annotated, (reg_x0 + shift, yc - 5), (reg_x1 + shift, yc + 45), (255, 255, 0), 2)
+                        # OMR No box (cyan)
+                        cv2.rectangle(annotated, (omr_x0 + shift, yc - 25), (omr_x1 + shift, yc + 25), (0, 255, 255), 2)
+                    else:
+                        # Registration No and QCAB Serial No boxes
+                        from core.nominal_roll_type2 import detect_top_border
+                        detected_top = detect_top_border(img)
+                        choice = self.type_combo.get()
+                        if "Normal" in choice or ("Auto" in choice and detected_top > 400):
+                            reg_y0, reg_y1 = -25, 25
+                            qcab_y0, qcab_y1 = 65, 135
+                        else:
+                            reg_y0, reg_y1 = -15, 35
+                            qcab_y0, qcab_y1 = -20, 30
+                        cv2.rectangle(annotated, (reg_x0 + shift, yc + reg_y0), (reg_x1 + shift, yc + reg_y1), (255, 255, 0), 2)
+                        cv2.rectangle(annotated, (qcab_x0 + shift, yc + qcab_y0), (qcab_x1 + shift, yc + qcab_y1), (0, 255, 255), 2)
+
+            # Invigilator signature
+            inv_coords = None
+            if records and len(records) > 0:
+                first_rec = records[0]
+                if first_rec.get("coords") and first_rec["coords"].get("inv"):
+                    inv_coords = first_rec["coords"]["inv"]
+            
+            if inv_coords:
+                iy0, iy1, ix0, ix1 = inv_coords
+                inv_x0, inv_y0, inv_x1, inv_y1 = ix0, iy0, ix1, iy1
+            else:
+                inv_x0, inv_y0, inv_x1, inv_y1 = self.get_invigilator_signature_box(w, h)
+                
             inv_color = (0, 255, 0) if self.current_invigilator_signed else (0, 0, 255)
             cv2.rectangle(annotated, (inv_x0, inv_y0), (inv_x1, inv_y1), inv_color, 3)
             cv2.putText(
@@ -935,22 +1022,81 @@ class AttendanceViewerDemo:
                 record.get("status", "Not Marked"))
         
         if self.current_img is not None:
-            yc = self.current_y_centers[row_num]
-            shift = self.current_shift
-            
             # Crop cells
-            if self.is_type1:
-                sig_crop = self.current_img[yc+25:yc+105, 330+shift : 810+shift]
-                reg_crop = self.current_img[yc-25:yc+25, 830+shift : 1030+shift]
-                omr_crop = self.current_img[yc-25:yc+25, 1090+shift : 1250+shift]
+            coords = record.get("coords") if record else None
+            
+            if coords and "reg" in coords:
+                # Use dynamic coordinates!
+                ry0, ry1, rx0, rx1 = coords["reg"]
+                reg_crop = self.current_img[ry0:ry1, rx0:rx1]
+                
+                qy0, qy1, qx0, qx1 = coords["qcab"]
+                omr_crop = self.current_img[qy0:qy1, qx0:qx1]
+                
+                sy0, sy1, sx0, sx1 = coords["sig"]
+                sig_crop = self.current_img[sy0:sy1, sx0:sx1]
             else:
-                sig_crop = self.current_img[yc+40:yc+130, 380+shift : 850+shift]
-                reg_crop = self.current_img[yc-25:yc+25, 760+shift : 950+shift]
-                omr_crop = self.current_img[yc-20:yc+30, 1180+shift : 1490+shift]
+                yc = self.current_y_centers[row_num]
+                shift = self.current_shift
+                if self.is_type1:
+                    sig_crop = self.current_img[yc+25:yc+105, 330+shift : 810+shift]
+                    reg_crop = self.current_img[yc-5:yc+45, 830+shift : 1030+shift]
+                    omr_crop = self.current_img[yc-25:yc+25, 1090+shift : 1250+shift]
+                else:
+                    from core.nominal_roll_type2 import detect_top_border
+                    detected_top = detect_top_border(self.current_img)
+                    choice = self.type_combo.get()
+                    if "Normal" in choice or ("Auto" in choice and detected_top > 400):
+                        reg_x0, reg_x1 = 760, 1000
+                        qcab_x0, qcab_x1 = 1300, 1640
+                        reg_y0, reg_y1 = -25, 25
+                        qcab_y0, qcab_y1 = 65, 135
+                    else:
+                        reg_x0, reg_x1 = 728, 938
+                        qcab_x0, qcab_x1 = 1120, 1430
+                        reg_y0, reg_y1 = -15, 35
+                        qcab_y0, qcab_y1 = -20, 30
+                        
+                    sig_crop = self.current_img[yc+35:yc+110, 380+shift : 850+shift]
+                    reg_crop = self.current_img[yc+reg_y0:yc+reg_y1, reg_x0+shift : reg_x1+shift]
+                    
+                    # Double-box fallback check for visualizer crop
+                    box_a = [yc+qcab_y0, yc+qcab_y1, qcab_x0+shift, qcab_x1+shift]
+                    dy_box_diff = 90 if (reg_y0 == -25) else 80
+                    box_b = [yc+qcab_y0+dy_box_diff, yc+qcab_y1+dy_box_diff, qcab_x0+shift, qcab_x1+shift]
+                    
+                    from core.nominal_roll_type2 import extract_qcab_number
+                    reader = get_ocr_reader()
+                    _, chosen_box = extract_qcab_number(self.current_img, box_a, box_b, reader)
+                    omr_crop = self.current_img[chosen_box[0]:chosen_box[1], chosen_box[2]:chosen_box[3]]
 
             h_img, w_img = self.current_img.shape[:2]
-            inv_x0, inv_y0, inv_x1, inv_y1 = self.get_invigilator_signature_box(w_img, h_img)
-            inv_sig_crop = self.current_img[inv_y0:inv_y1, inv_x0:inv_x1]
+            inv_coords = coords.get("inv") if coords else None
+            if inv_coords:
+                iy0, iy1, ix0, ix1 = inv_coords
+                inv_sig_crop = self.current_img[iy0:iy1, ix0:ix1]
+            else:
+                if self.is_type1:
+                    inv_x0, inv_y0, inv_x1, inv_y1 = self.get_invigilator_signature_box(w_img, h_img)
+                else:
+                    from core.nominal_roll_type2 import detect_left_border, detect_top_border
+                    anchor_x = detect_left_border(self.current_img, 133)
+                    detected_top = detect_top_border(self.current_img)
+                    
+                    choice = self.type_combo.get()
+                    if "Normal" in choice or ("Auto" in choice and detected_top > 400):
+                        y_shift = detected_top - 454 if abs(detected_top - 454) <= 60 else 0
+                        inv_x0 = anchor_x + 142
+                        inv_x1 = anchor_x + 566
+                        inv_y0 = 2110 + y_shift
+                        inv_y1 = 2170 + y_shift
+                    else:
+                        y_shift = detected_top - 350 if abs(detected_top - 350) <= 60 else 0
+                        inv_x0 = anchor_x + 247
+                        inv_x1 = anchor_x + 567
+                        inv_y0 = 2020 + y_shift
+                        inv_y1 = 2090 + y_shift
+                inv_sig_crop = self.current_img[max(0, inv_y0):min(h_img, inv_y1), max(0, inv_x0):min(w_img, inv_x1)]
                 
             self.root.update_idletasks()
 
@@ -1235,10 +1381,12 @@ class AttendanceViewerDemo:
 
     def _process_attendance_data_for_worker(self, img_path, is_type1):
         reader = get_ocr_reader()
+        choice = self.type_combo.get()
         if is_type1:
             records, header = process_attendance_sheet1(img_path, reader)
         else:
-            records, header = process_attendance_sheet2(img_path, reader)
+            from core.nominal_roll_type2 import process_attendance_sheet2_relative
+            records, header = process_attendance_sheet2_relative(img_path, reader)
 
         return {
             "center_code": header.get("center_code", ""),
@@ -1543,6 +1691,168 @@ class AttendanceViewerDemo:
             # Select the new sheet
             self.file_combo.current(new_idx)
             self.process_selected_sheet()
+
+    def start_bulk_excel_process(self):
+        import tkinter.filedialog as filedialog
+        import tkinter.messagebox as messagebox
+        
+        # 1. Ask for parent directory
+        parent_dir = filedialog.askdirectory(title="Select Parent Directory containing all subfolders")
+        if not parent_dir:
+            return
+            
+        # 2. Confirm
+        confirm = messagebox.askyesno(
+            "Confirm Bulk Process",
+            f"This will recursively search all subfolders under:\n{parent_dir}\n\nDo you want to start the bulk processing?"
+        )
+        if not confirm:
+            return
+            
+        # 3. Disable GUI controls to prevent user interactions during processing
+        self.bulk_excel_btn.config(state="disabled")
+        self.process_all_btn.config(state="disabled")
+        self.status_lbl.config(text="Bulk processing started...", foreground="#ffb300")
+        
+        # 4. Start processing thread
+        import threading
+        threading.Thread(target=self.run_bulk_excel_worker, args=(parent_dir,), daemon=True).start()
+
+    def run_bulk_excel_worker(self, parent_dir):
+        import csv
+        import time
+        import traceback
+        import tkinter.messagebox as messagebox
+        from core.nominal_roll_type2 import process_attendance_sheet2
+        from core.nominal_roll_type1 import process_attendance_sheet1
+        
+        choice = self.type_combo.get()
+        is_type1 = "Sheet 1" in choice
+        
+        # Find all images recursively
+        images = []
+        valid_exts = {".jpg", ".jpeg", ".png"}
+        for root_dir, _, filenames in os.walk(parent_dir):
+            for fname in filenames:
+                if os.path.splitext(fname.lower())[1] in valid_exts:
+                    images.append(os.path.join(root_dir, fname))
+                    
+        total = len(images)
+        if total == 0:
+            self.root.after(0, lambda: messagebox.showwarning("Warning", "No images found in the selected directory!"))
+            self.root.after(0, self.reset_bulk_ui_state)
+            return
+            
+        # Initialize consolidated CSV file
+        csv_path = os.path.join(parent_dir, "Consolidated_Attendance_Results.csv")
+        headers = [
+            "Filename", "Folder Name", "File Name", "Center Code", "Sub Center Code", 
+            "Subject Code", "Invigilator Signed", "Row Number", "Status", 
+            "Signature Present", "Registration No", "OMR No", "QCAB Serial No", 
+            "QPVC", "Validation Status"
+        ]
+        
+        try:
+            with open(csv_path, mode="w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f)
+                writer.writerow(headers)
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("Error", f"Failed to create consolidated CSV:\n{e}"))
+            self.root.after(0, self.reset_bulk_ui_state)
+            return
+            
+        processed_count = 0
+        reader = get_ocr_reader()
+        
+        for img_path in images:
+            folder_name = os.path.basename(os.path.dirname(img_path))
+            file_name = os.path.basename(img_path)
+            print(f"[{processed_count+1}/{total}] Processing: {folder_name}/{file_name} ...", flush=True)
+            
+            try:
+                # Run extraction
+                if is_type1:
+                    records, header = process_attendance_sheet1(img_path, reader)
+                else:
+                    from core.nominal_roll_type2 import process_attendance_sheet2_relative
+                    records, header = process_attendance_sheet2_relative(img_path, reader)
+                    
+                center_code = header.get("center_code", "")
+                subcenter_code = header.get("subcenter_code", "")
+                subject_code = header.get("subject_code", "")
+                inv_signed_val = int(header.get("invigilator_signed") or 0)
+                
+                rows_to_write = []
+                for r in records:
+                    row_num = r.get("row_number", "")
+                    reg_no = str(r.get("registration_no", "")).strip()
+                    omr_no = str(r.get("omr_no", "") if is_type1 else "").strip()
+                    qcab_no = str(r.get("qcab_serial_no", "") if not is_type1 else "").strip()
+                    qpvc_no = str(r.get("qpvc", "") if is_type1 else "").strip()
+                    status = r.get("status", "Not Marked")
+                    sig_present_val = 1 if r.get("signature_present") else 0
+                    
+                    # Validation logic
+                    validation = "OK"
+                    if status == "Present":
+                        if not reg_no or len(reg_no) < 6:
+                            validation = "Invalid Reg No"
+                        elif (is_type1 and not omr_no) or (not is_type1 and not qcab_no):
+                            validation = f"Missing {'OMR' if is_type1 else 'QCAB'} Number"
+                        elif sig_present_val == 0:
+                            validation = "Missing Candidate Signature"
+                    if inv_signed_val == 0:
+                        if validation == "OK":
+                            validation = "Missing Invigilator Signature"
+                        else:
+                            validation += " & Missing Invigilator Signature"
+                            
+                    rows_to_write.append([
+                        img_path, folder_name, file_name, center_code, subcenter_code,
+                        subject_code, inv_signed_val, row_num, status, sig_present_val,
+                        reg_no, omr_no, qcab_no, qpvc_no, validation
+                    ])
+                    
+                # Append to CSV immediately
+                with open(csv_path, mode="a", newline="", encoding="utf-8-sig") as f:
+                    writer = csv.writer(f)
+                    writer.writerows(rows_to_write)
+                print(f"      Success! Rows written.", flush=True)
+                    
+            except Exception as e:
+                print(f"      FAILED! Error: {e}", flush=True)
+                err_msg = f"ERROR: {str(e)[:100]}"
+                try:
+                    with open(csv_path, mode="a", newline="", encoding="utf-8-sig") as f:
+                        writer = csv.writer(f)
+                        writer.writerow([img_path, folder_name, file_name, "", "", "", 0, "", "", 0, "", "", "", "", err_msg])
+                except:
+                    pass
+                    
+            processed_count += 1
+            self.root.after(0, self.update_bulk_progress, processed_count, total)
+            
+        print(f"\nBulk processing completed successfully. Consolidated CSV saved at:\n{csv_path}\n", flush=True)
+        self.root.after(0, self.on_bulk_processing_complete, csv_path)
+
+    def update_bulk_progress(self, count, total):
+        self.progress["value"] = count
+        self.progress["maximum"] = total
+        pct = int((count / total) * 100)
+        self.status_lbl.config(text=f"Processed {count}/{total} ({pct}%)", foreground="#ffb300")
+
+    def reset_bulk_ui_state(self):
+        self.bulk_excel_btn.config(state="normal")
+        self.process_all_btn.config(state="normal")
+        self.status_lbl.config(text="Ready", foreground="#00e676")
+
+    def on_bulk_processing_complete(self, csv_path):
+        import tkinter.messagebox as messagebox
+        self.reset_bulk_ui_state()
+        messagebox.showinfo(
+            "Success",
+            f"Bulk processing finished!\n\nConsolidated results saved at:\n{csv_path}"
+        )
 
 if __name__ == "__main__":
     root = tk.Tk()

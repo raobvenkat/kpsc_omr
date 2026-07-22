@@ -153,7 +153,6 @@ class NominalRoll2DataEdit:
             'Subcenter_Code',
             'OMR_No',
             'Registration_No',
-            'QPVC',
             'CandSig',
             'InvSig',
             #'Whitener', 'NonStandard','Threshold'
@@ -369,8 +368,6 @@ class NominalRoll2DataEdit:
 
             ('Registration No' , 'regno_var'),
 
-            ('QPVC'            , 'qpvc_var')
-
         ]
 
         row_no = 1
@@ -542,47 +539,32 @@ class NominalRoll2DataEdit:
                 y2 = int(h * 0.17)
             elif field_name == 'omr_var':               
                 if row_no == 1:
-                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.23), int(h*0.28)
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.83), int(h*0.23), int(h*0.28)
                 elif row_no == 2:
-                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.32), int(h*0.38)
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.83), int(h*0.32), int(h*0.38)
                 elif row_no == 3:
-                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.42), int(h*0.48)
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.83), int(h*0.42), int(h*0.48)
                 elif row_no == 4:
-                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.52), int(h*0.58)
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.83), int(h*0.52), int(h*0.58)
                 elif row_no == 5:
-                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.62), int(h*0.68)
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.83), int(h*0.62), int(h*0.68)
                 elif row_no == 6:
-                    x1, x2, y1, y2 = int(w*0.61), int(w*0.78), int(h*0.72), int(h*0.78)
+                    x1, x2, y1, y2 = int(w*0.61), int(w*0.83), int(h*0.72), int(h*0.78)
                 else:
                      return None
             elif field_name == 'regno_var':
                 if row_no == 1:
-                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.23), int(h*0.28)
+                    x1, x2, y1, y2 = int(w*0.42), int(w*0.61), int(h*0.23), int(h*0.28)
                 elif row_no == 2:
-                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.32), int(h*0.38)
+                    x1, x2, y1, y2 = int(w*0.42), int(w*0.61), int(h*0.32), int(h*0.38)
                 elif row_no == 3:
-                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.42), int(h*0.48)
+                    x1, x2, y1, y2 = int(w*0.42), int(w*0.61), int(h*0.42), int(h*0.48)
                 elif row_no == 4:
-                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.52), int(h*0.58)
+                    x1, x2, y1, y2 = int(w*0.42), int(w*0.61), int(h*0.52), int(h*0.58)
                 elif row_no == 5:
-                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.62), int(h*0.68)
+                    x1, x2, y1, y2 = int(w*0.42), int(w*0.61), int(h*0.62), int(h*0.68)
                 elif row_no == 6:
-                    x1, x2, y1, y2 = int(w*0.48), int(w*0.63), int(h*0.72), int(h*0.78)
-                else:
-                     return None
-            elif field_name == 'qpvc_var':
-                if row_no == 1:
-                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.23), int(h*0.28)
-                elif row_no == 2:
-                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.32), int(h*0.38)
-                elif row_no == 3:
-                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.42), int(h*0.48)
-                elif row_no == 4:
-                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.52), int(h*0.58)
-                elif row_no == 5:
-                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.62), int(h*0.68)
-                elif row_no == 6:
-                    x1, x2, y1, y2 = int(w*0.30), int(w*0.50), int(h*0.72), int(h*0.78)
+                    x1, x2, y1, y2 = int(w*0.42), int(w*0.61), int(h*0.72), int(h*0.78)
                 else:
                      return None
             elif field_name == 'candsig':
@@ -800,6 +782,18 @@ class NominalRoll2DataEdit:
             self.grid.insert('', 'end', values=values)
 
         self.message_var.set(f'Page {self.current_page} of {self.total_pages}')
+        self._select_first_row()
+
+    def _select_first_row(self):
+        """Select and load the first visible row into the edit panel."""
+        children = self.grid.get_children()
+        if not children:
+            return
+        first = children[0]
+        self.grid.selection_set(first)
+        self.grid.focus(first)
+        self.grid.see(first)
+        self.grid_row_selected()
 
     def _normalize_column_name(self, value):
         return ''.join(ch.lower() for ch in str(value) if ch.isalnum())
@@ -918,10 +912,6 @@ class NominalRoll2DataEdit:
         self.editor_vars['regno_var'].set(
             str(self._get_row_value(vals, 'Registration_No', 'RegNo', 'RegistrationNo'))
         )
-
-        #self.editor_vars['qpvc_var'].set(
-        #    str(self._get_row_value(vals, 'QPVC', 'QPVCNo'))
-        #)
 
         def yn(v):
             return "Yes" if str(v) in (
@@ -1070,57 +1060,25 @@ class NominalRoll2DataEdit:
                     @EditFor=?,
                     @UserID=?,
                     @ID=?,
-                    @CenterCode=?,
-                    @SubCenterCode=?,
+                    @Center=?,
+                    @SubCenter=?,
                     @SubCode=?,
                     @OMRNo=?,
                     @RegNo=?,
-                    @QPVC=?,
                     @CandSig=?,
                     @InvSign=?
                 """,
                 (
                     self.edit_for_var.get(),
-
                     self.user_id,
-
                     record_id,
-
-                    self.editor_vars[
-                        'center_code_var'
-                    ].get(),
-
-                    self.editor_vars[
-                        'subcenter_var'
-                    ].get(),
-
-                    self.editor_vars[
-                        'subject_code_var'
-                    ].get(),
-
-                    self.editor_vars[
-                        'omr_var'
-                    ].get(),
-
-                    self.editor_vars[
-                        'regno_var'
-                    ].get(),
-
-                    #self.editor_vars[
-                    #   'qpvc_var'
-                    #].get(),
-
-                    self.yes_no_to_bit(
-                        self.editor_vars[
-                            'candsig'
-                        ].get()
-                    ),
-
-                    self.yes_no_to_bit(
-                        self.editor_vars[
-                            'invsig'
-                        ].get()
-                    )
+                    self.editor_vars['center_code_var'].get(),
+                    self.editor_vars['subcenter_var'].get(),
+                    self.editor_vars['subject_code_var'].get(),
+                    self.editor_vars['omr_var'].get(),
+                    self.editor_vars['regno_var'].get(),
+                    self.yes_no_to_bit(self.editor_vars['candsig'].get()),
+                    self.yes_no_to_bit(self.editor_vars['invsig'].get()),
                 )
             )
             
@@ -1128,40 +1086,65 @@ class NominalRoll2DataEdit:
             cursor.close()
             conn.close()
             self.message_var.set('Record updated successfully.')
-            self.load_data()
-            self.select_next_row_after_update(record_id)
+
+            # Remember the current row's position before reloading
+            current_children = list(self.grid.get_children())
+            current_selection = self.grid.selection()
+            saved_position = 0
+            if current_selection:
+                try:
+                    saved_position = current_children.index(current_selection[0])
+                except ValueError:
+                    saved_position = 0
+
+            # Remember current page so reload does not jump to page 1
+            saved_page = self.current_page
+
+            self.load_data_keep_page(saved_page)
+            self.select_row_at_position(saved_position)
+
         except Exception as ex:
             self.log_error('NominalRoll2DataEdit', 'Update', ex)
             self.message_var.set(str(ex))
 
-    def select_next_row_after_update(self, updated_id):
+    def load_data_keep_page(self, page_to_restore=1):
+        """Reload data from the database without resetting to page 1."""
+        try:
+            conn = db_credentials.get_sql_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                'EXEC usp_LoadNominalRoll2EditGrid @EditFor=?, @UserID=?, @FromID=?, @ToID=?',
+                (self.edit_for_var.get(), self.user_id,
+                 self.from_sheet_var.get(), self.to_sheet_var.get())
+            )
+            self.columns = [c[0] for c in cursor.description]
+            self.rows = cursor.fetchall()
+            cursor.close()
+            conn.close()
+
+            self.filtered_rows = list(self.rows)
+            self.total_pages = max(1, (len(self.filtered_rows) + self.PAGE_SIZE - 1) // self.PAGE_SIZE)
+            # Restore the page the user was on (clamp to valid range)
+            self.current_page = max(1, min(page_to_restore, self.total_pages))
+            self.bind_page()
+            self.message_var.set(f'{len(self.rows)} records loaded.')
+        except Exception as ex:
+            self.message_var.set(str(ex))
+
+    def select_row_at_position(self, position):
+        """Select the row at the given 0-based position in the current page.
+        If that position no longer exists (record was removed after save),
+        select the closest previous row instead.
+        """
         children = list(self.grid.get_children())
         if not children:
             return
-
-        current_selection = self.grid.selection()
-        selected_index = None
-        for idx, child in enumerate(children):
-            values = self.grid.item(child)['values']
-            if not values:
-                continue
-            if str(values[1]) == str(updated_id):
-                selected_index = idx
-                break
-
-        if selected_index is None:
-            if current_selection:
-                self.grid.selection_set(current_selection)
-                self.grid_row_selected()
-            return
-
-        next_index = selected_index + 1
-        if next_index >= len(children):
-            next_index = len(children) - 1
-
-        next_item = children[next_index]
-        self.grid.selection_set(next_item)
-        self.grid.focus(next_item)
+        # Clamp: if the saved row was the last one, select the new last row
+        target = min(position, len(children) - 1)
+        item = children[target]
+        self.grid.selection_set(item)
+        self.grid.focus(item)
+        self.grid.see(item)
         self.grid_row_selected()
 
     def skip_record(self):

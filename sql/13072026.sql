@@ -931,7 +931,7 @@ BEGIN
 				  ,[EditedOn]=GETDATE()                 
              WHERE ID=@ID
 			 update NominalRoll2 
-			    set [center_code] = iif(len(Replace([center_code],' ',''))<1,1,0) , subcenter_code = iif(len(Replace([subcenter_code],' ',''))<1,1,0),RegNoDesc = iif(len(Replace([registration_no],' ',''))<9,'1',0),
+			    set CenterCodeDesc = iif(len(Replace([center_code],' ',''))<1,1,0) , SubCenterCodeDesc = iif(len(Replace([subcenter_code],' ',''))<1,1,0),RegNoDesc = iif(len(Replace([registration_no],' ',''))<9,'1',0),
 				CandSignDesc = iif([signature_present] = 1,0,1) ,InvSignDesc=iif( invigilator_signed = 1,0,1) , [SubDesc]= iif(len(Replace([subject_code],' ',''))<3,'1',0) , QCABDesc= iif(len(Replace(qcab_serial_no,' ',''))<7,'1',0)
 				--QPVCDesc =iif(len(Replace(A.[qpvc],' ',''))<1,1,0) 
 				--[whitenerflag] = whitenerDesc, [isblack] = isBlackDesc, [bubble_Th_status] = ThDesc

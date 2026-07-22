@@ -1,10 +1,10 @@
-Select * from [dbo].[omr_results] where whitenerflag=1
+Select * from [dbo].[omr_results] where candidate_signed=0
 
 Select * from [dbo].[CounterFoilData]
 Select * from [dbo].[CounterFoilDataEditLog]
 Select * from [dbo].[attendance_sheet_data_1]
 Select * from [dbo].[attendance_sheet_data2]
-Select * from [dbo].[NominalRoll1]
+Select * from [dbo].[NominalRoll2]
 Select * from [dbo].[NominalRoll1EditLog]
 Select * from [dbo].[ErrorLog]
 Select ID, ReportFor, ReportName, ProcedureName from [dbo].[ExportReport]
