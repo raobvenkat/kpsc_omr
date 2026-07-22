@@ -108,7 +108,7 @@ class ImportMasterData:
                 SubjectCode     VARCHAR(10)        NOT NULL,
                 AddedBy         INT                NULL,
                 AddedDate       DATETIME           NULL,
-                CONSTRAINT [PK_MASERDATA] PRIMARY KEY CLUSTERED (SlNo ASC)
+                CONSTRAINT [PK_MASERDATA_12] PRIMARY KEY CLUSTERED (SlNo ASC)
             ) ON [PRIMARY]
 
         END
