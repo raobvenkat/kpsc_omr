@@ -162,8 +162,108 @@ BLIND_DISABLED_OMR_TEMPLATE = {
     "signature_ink_threshold": 0.002
 }
 
-# List of templates
-OMR_TEMPLATES = [STANDARD_OMR_TEMPLATE, BLIND_DISABLED_OMR_TEMPLATE]
+# Counter Foil sheet — landscape scan, ~1040×760 px
+# Layout: left ~50% = subject/date/signatures, right ~50% = barcode + bubble grid + QCA number
+#
+# Measured from actual scanned images at 1040×760 reference:
+#   Sheet width  = 1040 px,  height = 760 px
+#   Dividing line between left and right panels ≈ x = 520
+#
+#   Barcode:          y  15– 120,  x 530–1020
+#   Register No box:  y 190– 250,  x 530–1020  (printed border)
+#   Bubble grid:      y 255– 580,  x 545–1010  (9 cols × 10 rows)
+#     first bubble col x ≈ 555,  last ≈ 1000
+#     col_spacing ≈ (1000-555)/8 ≈ 56 px
+#     row_spacing ≈ (580-265)/9  ≈ 35 px
+#   QCA label:        y 585– 640,  x 530–1020
+#   QCA number:       y 640– 720,  x 530–1020
+#   Candidate sig:    y 335– 470,  x  10– 510
+#   Invigilator sig:  y 490– 610,  x  10– 510
+#   Subject Code:     y  10–  90,  x  10– 300
+PORTRAIT_COUNTERFOIL_TEMPLATE = {
+    "name": "portrait_counterfoil",
+    "target_width": 1040,
+    "target_height": 760,
+
+    # signature crops (y_start, y_end, x_start, x_end) at 1040×760 reference
+    "cand_sig_detect": (335, 470, 10, 510),
+    "cand_sig_save":   (325, 480, 5,  515),
+    "inv_sig_detect":  (490, 610, 10, 510),
+    "inv_sig_save":    (480, 620, 5,  515),
+
+    # barcode crop — right panel, top strip
+    "barcode": (15, 120, 530, 1030),
+
+    # handwritten register number box (printed border row above bubbles)
+    "reg_boxes": (190, 255, 530, 1020),
+
+    # printed QCA Booklet Serial Number label area
+    "qca": (585, 645, 530, 1020),
+
+    # Booklet Serial Number bubble grid — NOT present (large OCR number used instead)
+    "booklet_bubble_grid": {
+        "cols": 7,
+        "rows": 10,
+        "region": (645, 760, 530, 1020),
+        "col_start_offset": 10,
+        "row_start_offset": 10,
+        "col_spacing": 70.0,
+        "row_spacing": 16.0,
+        "sample_radius": 5
+    },
+
+    # OMR Bubble Grid Alignment
+    # The printed register-number border box (reg_boxes) is used as the anchor.
+    # At 1040×760: box is approximately x=530–1020, y=190–255 → width ~490, height ~65
+    "handwritten_box_contour": {
+        "w_min": 380, "w_max": 560,
+        "h_min": 45,  "h_max": 90,
+        "y_min": 140, "y_max": 300
+    },
+
+    "header_contour": {
+        "w_min": 380,
+        "h_min": 100
+    },
+
+    # Origin offsets from handwritten box contour top-left → bubble grid origin
+    # box top ~190, grid_y ~255  → dy = 65
+    # box left ~530, first bubble col ~545 → dx = 15
+    "grid_offset_from_box":    (15, 65),
+    "grid_offset_from_header": (90, 200),
+    "grid_hardcoded_fallback": (555, 258),
+
+    # Handwritten digit row offsets relative to grid_y (at 1040×760 reference)
+    # reg_boxes top=190, bot=255, grid_y_ref=258
+    # offset_top = 190 - 258 = -68,  offset_bot = 255 - 258 = -3
+    "hw_offset_top": -68,
+    "hw_offset_bot":  -3,
+
+    # Bubble Grid — 9 columns (register number digits 0–8), 10 rows (digits 0–9)
+    # At 1040×760: grid spans x≈545–1000, y≈258–575
+    #   col_spacing = (1000-545)/8 ≈ 56.9 px
+    #   row_spacing = (575-258)/9  ≈ 35.2 px
+    "bubble_grid": {
+        "cols": 9,
+        "rows": 10,
+        "col_start_offset": 15,
+        "row_start_offset": 15,
+        "col_spacing": 56.0,
+        "row_spacing": 35.0,
+        "sample_radius": 5
+    },
+
+    # Thresholds
+    "bubble_fill_threshold":    140,
+    "bubble_contrast_threshold": 25,
+    "signature_ink_threshold":  0.002
+}
+
+OMR_TEMPLATES = [
+    STANDARD_OMR_TEMPLATE,
+    BLIND_DISABLED_OMR_TEMPLATE,
+    PORTRAIT_COUNTERFOIL_TEMPLATE,
+]
 
 def get_omr_template(img_width):
     """

@@ -266,9 +266,18 @@ def check_ink_present_unified(crop_img, is_bw):
     return bool(is_signed), ratio
 
 def align_grid_perfect(img, tpl, scale_x, scale_y, box, is_bw):
-    bx, by, bw, bh = box
-    est_grid_x = bx + int(19 * scale_x)
-    est_grid_y = by + int(208 * scale_y)
+    # Guard: if box detection failed, fall back to the hardcoded template origin
+    if box is None:
+        fx, fy = tpl["grid_hardcoded_fallback"]
+        bx = int(fx * scale_x)
+        by = int(fy * scale_y)
+        # Use offsets that produce the same est_grid_x/y as the hardcoded values
+        est_grid_x = bx
+        est_grid_y = by
+    else:
+        bx, by, bw, bh = box
+        est_grid_x = bx + int(19 * scale_x)
+        est_grid_y = by + int(208 * scale_y)
     
     detected_centroids = detect_bubbles_centroids(img, scale_x)
     
@@ -366,35 +375,42 @@ def detect_register_grid(img):
     max_v = 0
     max_h = 0
 
-    for line in lines:
+    if lines is not None:
+        for line in lines:
 
-        x1,y1,x2,y2 = line[0]
+            x1,y1,x2,y2 = line[0]
 
-        angle = abs(
-            np.degrees(
-                np.arctan2(
-                    y2-y1,
-                    x2-x1
+            angle = abs(
+                np.degrees(
+                    np.arctan2(
+                        y2-y1,
+                        x2-x1
+                    )
                 )
             )
-        )
 
-        length = np.hypot(
-            x2-x1,
-            y2-y1
-        )
+            length = np.hypot(
+                x2-x1,
+                y2-y1
+            )
 
-        if abs(angle) < 3:
+            if abs(angle) < 3:
 
-            if length > max_h:
-                max_h = length
-                horizontal_y = y1
+                if length > max_h:
+                    max_h = length
+                    horizontal_y = y1
 
-        elif abs(angle-90) < 3:
+            elif abs(angle-90) < 3:
 
-            if length > max_v:
-                max_v = length
-                vertical_x = x1
+                if length > max_v:
+                    max_v = length
+                    vertical_x = x1
+
+    # Fall back to sensible defaults when lines were not detected
+    if vertical_x is None:
+        vertical_x = 0
+    if horizontal_y is None:
+        horizontal_y = 0
 
     vertical_x += 850
     horizontal_y += 200
@@ -414,18 +430,17 @@ def detect_register_grid(img):
 def read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw):
     if is_bw:
         box = find_handwritten_box_bw(img, tpl, scale_x, scale_y)
+        # box may be None if contour detection fails — align_grid_perfect handles that
         grid_x, grid_y = align_grid_perfect(img, tpl, scale_x, scale_y, box, is_bw)
-        align_method = "perfect_snapped_bw"
+        align_method = "perfect_snapped_bw" if box is not None else "hardcoded_fallback_bw"
     else:
         box = find_handwritten_box_color(img, tpl, scale_x)
         if box is not None:
             grid_x, grid_y = align_grid_perfect(img, tpl, scale_x, scale_y, box, is_bw)
             align_method = "box_snapped_color"
         else:
-            # Fallback to the legacy static offset if the handwritten box cannot be detected.
-            bx, by, bw, bh = 0, 0, 0, 0
-            grid_x = int(19 * scale_x)
-            grid_y = int(208 * scale_y)
+            # align_grid_perfect will use the hardcoded fallback when box is None
+            grid_x, grid_y = align_grid_perfect(img, tpl, scale_x, scale_y, None, is_bw)
             align_method = "box_direct_color_fallback"
 
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -1150,6 +1165,159 @@ def detect_red_border_lines(img):
     
     return result
 
+def _build_counterfoil_line_mask(img):
+    """
+    Build a binary mask that highlights the thick continuous border lines on a
+    counter foil sheet.  The border lines are either:
+      • Black  — dark pixels with low saturation
+      • Magenta/Red — hue wraps around 0° / 180° in HSV
+
+    Both colour channels are combined so the function works regardless of which
+    print colour is used on the physical sheet.
+    """
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+    # ── Black / dark-grey lines ───────────────────────────────────────────
+    # Value (brightness) < 80, saturation < 60  →  dark, nearly neutral pixel
+    black_mask = cv2.inRange(hsv,
+                             np.array([0,   0,  0]),
+                             np.array([180, 60, 80]))
+
+    # ── Magenta / Red lines ───────────────────────────────────────────────
+    lower_mag1 = np.array([0,   50,  50])
+    upper_mag1 = np.array([15, 255, 255])
+    lower_mag2 = np.array([155, 50,  50])
+    upper_mag2 = np.array([180, 255, 255])
+    mag_mask = cv2.bitwise_or(
+        cv2.inRange(hsv, lower_mag1, upper_mag1),
+        cv2.inRange(hsv, lower_mag2, upper_mag2)
+    )
+
+    combined = cv2.bitwise_or(black_mask, mag_mask)
+
+    # Dilate slightly to bridge sub-pixel gaps in scanned lines
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    combined = cv2.dilate(combined, kernel, iterations=2)
+    return combined
+
+
+def _straighten_counterfoil(img):
+    """
+    Straighten a counter foil sheet using its two outermost printed border lines:
+
+      • The HORIZONTAL line that runs continuously across the full sheet width,
+        just ABOVE the 'Subject Code :' label  (top border of the content area).
+      • The VERTICAL line that runs continuously down the full sheet height,
+        just LEFT of the 'Subject Code :' label  (left border of the content area).
+
+    Both lines can be black or magenta, depending on the print run.
+    The rotation angle is computed from the horizontal border line.
+    The vertical border line is detected as a cross-check; if only one line is
+    found the other is still used to compute a valid correction.
+
+    Strategy
+    ────────
+    1. Build a combined black + magenta mask.
+    2. Run HoughLinesP with a long minLineLength so only the continuous border
+       lines (spanning most of the sheet) are candidates — short cell-border
+       segments inside the table are rejected.
+    3. Among all candidates pick:
+         best_horizontal  →  longest near-horizontal line  (|angle| < 3°)
+         best_vertical    →  longest near-vertical   line  (|angle - 90°| < 3°)
+    4. Use the horizontal line to compute the rotation angle.
+       If no horizontal is found, derive the angle from the vertical line
+       (perpendicular).
+    5. Apply the rotation.  Skip if |angle| < 0.3° (already straight).
+    """
+    h, w = img.shape[:2]
+    center = (w // 2, h // 2)
+
+    identity = cv2.getRotationMatrix2D(center, 0.0, 1.0)
+
+    # ── Step 1: colour mask ───────────────────────────────────────────────
+    mask = _build_counterfoil_line_mask(img)
+
+    # ── Step 2: Hough line detection ──────────────────────────────────────
+    # minLineLength = 40 % of the shorter dimension so only the long border
+    # lines pass; short internal cell lines are suppressed.
+    min_len = int(min(h, w) * 0.40)
+
+    lines = cv2.HoughLinesP(
+        mask, 1, np.pi / 180,
+        threshold=60,
+        minLineLength=min_len,
+        maxLineGap=15
+    )
+
+    if lines is None or len(lines) == 0:
+        # Nothing found — return identity (no rotation applied)
+        return img, identity, 0.0, center
+
+    # ── Step 3: separate horizontal and vertical candidates ───────────────
+    best_horizontal = None
+    best_h_length   = 0.0
+    best_vertical   = None
+    best_v_length   = 0.0
+
+    for line in lines:
+        x1, y1, x2, y2 = line[0]
+        angle_deg = math.degrees(math.atan2(y2 - y1, x2 - x1))
+        length    = math.hypot(x2 - x1, y2 - y1)
+
+        if abs(angle_deg) < 3.0:                      # near-horizontal
+            if length > best_h_length:
+                best_h_length   = length
+                best_horizontal = (x1, y1, x2, y2)
+
+        elif abs(abs(angle_deg) - 90.0) < 3.0:        # near-vertical
+            if length > best_v_length:
+                best_v_length = length
+                best_vertical = (x1, y1, x2, y2)
+
+    # ── Step 4: compute rotation angle ───────────────────────────────────
+    rotation_angle = 0.0
+
+    if best_horizontal is not None:
+        # Primary: angle directly from the horizontal border line
+        x1, y1, x2, y2 = best_horizontal
+        rotation_angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
+
+    elif best_vertical is not None:
+        # Fallback: derive from the vertical border line
+        # A perfect vertical has atan2 = ±90°; deviation from ±90° = skew
+        x1, y1, x2, y2 = best_vertical
+        vert_angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
+        # vert_angle ≈ +90 for downward line → rotation_angle = vert_angle - 90
+        if vert_angle > 0:
+            rotation_angle = vert_angle - 90.0
+        else:
+            rotation_angle = vert_angle + 90.0
+
+    # ── Step 5: apply rotation ────────────────────────────────────────────
+    if abs(rotation_angle) < 0.3:
+        # Sheet is already straight enough — return identity to avoid
+        # unnecessary interpolation artefacts
+        return img, identity, 0.0, center
+
+    M = cv2.getRotationMatrix2D(center, rotation_angle, 1.0)
+    rotated = cv2.warpAffine(
+        img, M, (w, h),
+        flags=cv2.INTER_CUBIC,
+        borderValue=(255, 255, 255)
+    )
+    return rotated, M, rotation_angle, center
+
+
+def _get_h_target(tpl):
+    """Return the reference height (px) for a given template."""
+    name = tpl.get("name", "standard")
+    if name == "standard":
+        return 1080
+    if name == "portrait_counterfoil":
+        return tpl.get("target_height", 760)
+    return 784   # blind_disabled fallback
+
+
 def process_single_sheet_for_demo(img_path):
     img = cv2.imread(img_path)
     if img is None:
@@ -1160,14 +1328,13 @@ def process_single_sheet_for_demo(img_path):
     
     h_orig, w_orig, _ = img_original.shape
     tpl = get_omr_template(w_orig)
-    
-    h_target = 1080 if tpl["name"] == "standard" else 784
-    scale_y_orig = h_orig / h_target
-    
+    is_counterfoil = tpl.get("name") == "portrait_counterfoil"
+
     is_padded_bw = w_orig > 1800
+
     if is_padded_bw:
-        scale_y_orig = h_orig / 1080.0
-        scale_x_orig = scale_y_orig
+        scale_x_orig = h_orig / 1080.0
+        scale_y_orig = scale_x_orig
     else:
         scale_x_orig = w_orig / tpl["target_width"]
         scale_y_orig = scale_x_orig
@@ -1177,7 +1344,12 @@ def process_single_sheet_for_demo(img_path):
     booklet_sl_no, omr_threshold, booklet_crop = VisualOMRViewerDemo.extract_booklet_number(None, img_original, scale_x_orig, scale_y_orig)
     
     # Straighten the sheet for main processing (bubble reading, etc.)
-    img, M, rotation_angle, center = straighten_sheet_using_corner_lines(img)    
+    # Counter foil sheets have no red border lines — use a shorter minLineLength
+    # so the grayscale fallback can detect the thin black cell borders.
+    if is_counterfoil:
+        img, M, rotation_angle, center = _straighten_counterfoil(img)
+    else:
+        img, M, rotation_angle, center = straighten_sheet_using_corner_lines(img)
     h, w, _ = img.shape
     
     # Apply the same rotation correction to the extracted crops so they appear straight
@@ -1189,20 +1361,22 @@ def process_single_sheet_for_demo(img_path):
     is_bw = bool(color_mode["is_bw"])
     isblack = int(color_mode["isblack"])
     
-    # Recalculate scale factors for straightened image
-    h_target = 1080 if tpl["name"] == "standard" else 784
-    scale_y = h / h_target
-    
-    right_half = img[:, w//2:]
-    decoded = decode(right_half)
-    barcode_val = decoded[0].data.decode('utf-8') if decoded else "Not Detected"
-    
+    # Compute uniform scale factors (scale_x == scale_y for non-padded sheets)
     if is_padded_bw:
-        scale_y = h / 1080.0
-        scale_x = scale_y
+        scale_x = h / 1080.0
+        scale_y = scale_x
     else:
         scale_x = w / tpl["target_width"]
         scale_y = scale_x
+
+    # Barcode: try the right portion of the image first (works for all templates).
+    # For counter foil the barcode starts at ~51% width, so search from 45% to be safe.
+    barcode_x_start = int(w * 0.45) if is_counterfoil else w // 2
+    decoded = decode(img[:, barcode_x_start:])
+    if not decoded:
+        # Fallback: try the full image in case barcode is near centre
+        decoded = decode(img)
+    barcode_val = decoded[0].data.decode('utf-8') if decoded else "Not Detected"
         
     # 1. Alignment & Bubble Reading
     bubble_regno, debug_grid_img, grid_x, grid_y, align_method, bubble_Th_status = read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw)
@@ -1210,20 +1384,33 @@ def process_single_sheet_for_demo(img_path):
     # 2. Handwritten Digit OCR
     handwritten_regno = read_handwritten_regno(img, tpl, scale_x, scale_y, grid_x, grid_y, is_bw)
         
-    # 3. Signature crops and status
-    # Extract candidate signature
-    cand_sig_x_start = max(0, int(130 * scale_x))
-    cand_sig_x_end = min(w, int(900 * scale_x))
-    cand_sig_y_start = max(0, int(grid_y + 2 * scale_y))
-    cand_sig_y_end = min(h, int(grid_y + 92 * scale_y))
+    # 3. Signature crops
+    # For counter foil: signatures are on the LEFT panel, at fixed template positions.
+    # For standard OMR: signatures sit below the bubble grid (grid_y-relative offsets).
+    if is_counterfoil:
+        cs = tpl["cand_sig_detect"]   # (y0, y1, x0, x1)
+        iv = tpl["inv_sig_detect"]
+        cand_sig_x_start = max(0, int(cs[2] * scale_x))
+        cand_sig_x_end   = min(w, int(cs[3] * scale_x))
+        cand_sig_y_start = max(0, int(cs[0] * scale_y))
+        cand_sig_y_end   = min(h, int(cs[1] * scale_y))
+        inv_sig_x_start  = max(0, int(iv[2] * scale_x))
+        inv_sig_x_end    = min(w, int(iv[3] * scale_x))
+        inv_sig_y_start  = max(0, int(iv[0] * scale_y))
+        inv_sig_y_end    = min(h, int(iv[1] * scale_y))
+    else:
+        # Standard OMR — signatures are below the bubble grid
+        cand_sig_x_start = max(0, int(130 * scale_x))
+        cand_sig_x_end   = min(w, int(900 * scale_x))
+        cand_sig_y_start = max(0, int(grid_y + 2   * scale_y))
+        cand_sig_y_end   = min(h, int(grid_y + 92  * scale_y))
+        inv_sig_x_start  = max(0, int(130 * scale_x))
+        inv_sig_x_end    = min(w, int(900 * scale_x))
+        inv_sig_y_start  = max(0, int(grid_y + 152 * scale_y))
+        inv_sig_y_end    = min(h, int(grid_y + 252 * scale_y))
+
     cand_sig_crop = img[cand_sig_y_start:cand_sig_y_end, cand_sig_x_start:cand_sig_x_end]
-    
-    # Extract invigilator signature
-    inv_sig_x_start = max(0, int(130 * scale_x))
-    inv_sig_x_end = min(w, int(900 * scale_x))
-    inv_sig_y_start = max(0, int(grid_y + 152 * scale_y))
-    inv_sig_y_end = min(h, int(grid_y + 252 * scale_y))
-    inv_sig_crop = img[inv_sig_y_start:inv_sig_y_end, inv_sig_x_start:inv_sig_x_end]
+    inv_sig_crop  = img[inv_sig_y_start:inv_sig_y_end,   inv_sig_x_start:inv_sig_x_end]
     
     # 4. Handwritten Box Crop — coordinates must exactly match read_handwritten_regno
     col_spacing = tpl["bubble_grid"]["col_spacing"] * scale_x
@@ -1256,11 +1443,17 @@ def process_single_sheet_for_demo(img_path):
     # 5. Create Full Annotated Image for Left Panel
     full_annotated = img.copy()
     
-    # Draw barcode rect (in right half, so shift coordinates)
+    # Draw barcode rect — shift by barcode_x_start since decode was on a sub-image
     if decoded:
         br = decoded[0].rect
-        cv2.rectangle(full_annotated, (w//2 + br.left, br.top), (w//2 + br.left + br.width, br.top + br.height), (0, 165, 255), 3)
-        cv2.putText(full_annotated, "Barcode", (w//2 + br.left, max(25, br.top - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
+        bx_offset = barcode_x_start
+        cv2.rectangle(full_annotated,
+                      (bx_offset + br.left, br.top),
+                      (bx_offset + br.left + br.width, br.top + br.height),
+                      (0, 165, 255), 3)
+        cv2.putText(full_annotated, "Barcode",
+                    (bx_offset + br.left, max(25, br.top - 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 165, 255), 2)
         
     # Draw Bubble Grid
     bg_x0 = int(grid_x + col_start - 10)
