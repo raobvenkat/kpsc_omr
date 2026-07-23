@@ -2151,6 +2151,19 @@ class VisualOMRViewerDemo:
         else:
             self.status_summary_lbl.config(text="")
 
+    def _rel_key(self, full_path):
+        """
+        Return a display key for a file relative to the selected root folder.
+        e.g.  /root/SubA/100001.jpg  →  'SubA/100001.jpg'
+        Falls back to basename if the path is not under omr_dir.
+        """
+        if self.omr_dir:
+            try:
+                return os.path.relpath(full_path, self.omr_dir)
+            except ValueError:
+                pass
+        return os.path.basename(full_path)
+
     def _init_status_grid(self):
         """Populate grid with all known filenames as pending rows."""
         if not hasattr(self, 'status_tree'):
@@ -2161,7 +2174,7 @@ class VisualOMRViewerDemo:
         self._status_iids = {}
         self._status_state = {}
         for fp in self.filenames:
-            self._ensure_status_row(os.path.basename(fp))
+            self._ensure_status_row(self._rel_key(fp))
         self._refresh_status_summary()
 
     def browse_folder(self):
@@ -2169,31 +2182,31 @@ class VisualOMRViewerDemo:
         if not folder:
             return
 
-        raw_paths = (
-            glob.glob(os.path.join(folder, "*.jpg")) +
-            glob.glob(os.path.join(folder, "*.png")) +
-            glob.glob(os.path.join(folder, "*.jpeg")) +
-            glob.glob(os.path.join(folder, "*.JPG")) +
-            glob.glob(os.path.join(folder, "*.PNG")) +
-            glob.glob(os.path.join(folder, "*.JPEG"))
-        )
+        # Collect images from the selected folder AND all subfolders recursively.
+        # "Error" subfolders created by this program are skipped.
+        exts = ("*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG")
         seen = set()
-        image_paths = []
-        for p in raw_paths:
-            norm = os.path.normcase(os.path.abspath(p))
-            if norm not in seen:
-                seen.add(norm)
-                image_paths.append(p)
-        image_paths.sort()
+        raw_paths = []
+        for root_dir, dirs, _ in os.walk(folder):
+            # Skip "Error" folders so re-running doesn't re-process failed files
+            dirs[:] = [d for d in dirs if d.lower() != "error"]
+            for ext in exts:
+                for p in glob.glob(os.path.join(root_dir, ext)):
+                    norm = os.path.normcase(os.path.abspath(p))
+                    if norm not in seen:
+                        seen.add(norm)
+                        raw_paths.append(p)
 
-        if not image_paths:
+        raw_paths.sort()
+
+        if not raw_paths:
             messagebox.showwarning("No Images Found",
-                f"No image files (.jpg, .jpeg, .png) found in:\n{folder}")
+                f"No image files (.jpg, .jpeg, .png) found in:\n{folder}\n(including subfolders)")
             return
 
         self.omr_dir = folder
-        self.image_paths = image_paths
-        # Store full paths in combo; display full path to user
+        self.image_paths = raw_paths
+        # Store full absolute paths; combo shows them for navigation
         self.filenames = [os.path.abspath(p) for p in self.image_paths]
 
         self.load_omr_csv()
@@ -2213,8 +2226,8 @@ class VisualOMRViewerDemo:
             messagebox.showwarning("Warning", "Please select an OMR sheet first!")
             return
 
-        # filename (basename) is used as the CSV record key
-        filename = os.path.basename(img_path)
+        # Use relative path as the record key so subfolder files are distinct
+        filename = self._rel_key(img_path)
 
         # Auto-save previous sheet silently
         if (hasattr(self, 'last_loaded_filename') and self.last_loaded_filename
@@ -2384,9 +2397,14 @@ class VisualOMRViewerDemo:
                 with open(csv_path, mode="r", newline="", encoding="utf-8") as f:
                     reader = csv.DictReader(f)
                     for row in reader:
-                        filename = row.get("Filename")
-                        if filename:
-                            self.omr_csv_records[os.path.basename(filename)] = row
+                        stored = row.get("Filename", "")
+                        if stored:
+                            # Key by relative path so subfolder files are distinct
+                            try:
+                                key = os.path.relpath(stored, self.omr_dir)
+                            except ValueError:
+                                key = os.path.basename(stored)
+                            self.omr_csv_records[key] = row
             except Exception as e:
                 print(f"Error loading CSV master: {e}")
 
@@ -2416,12 +2434,12 @@ class VisualOMRViewerDemo:
                 "BookletSlNo", "OMRThreshold", "IsBlack"
             ])
             for filename in sorted(self.filenames):
-                # filenames list holds full paths; CSV key is basename
-                key = os.path.basename(filename)
+                # Use relative path as key (matches what process_selected_sheet stores)
+                key = self._rel_key(filename)
                 if key in self.omr_csv_records:
                     row = self.omr_csv_records[key]
                     writer.writerow([
-                        row.get("Filename", key),
+                        row.get("Filename", filename),
                         row.get("Decoded Barcode", ""),
                         row.get("OMR Bubble Reading", ""),
                         row.get("Handwritten OCR", ""),
@@ -2466,9 +2484,9 @@ class VisualOMRViewerDemo:
 
     def save_corrections(self, filename_to_save=None, show_msg=True):
         if filename_to_save is None:
-            # combo holds full path; use basename as record key
+            # combo holds full path; convert to relative key
             raw = self.file_combo.get()
-            filename_to_save = os.path.basename(raw) if raw else ""
+            filename_to_save = self._rel_key(raw) if raw else ""
 
         if not filename_to_save:
             if show_msg:
@@ -3082,7 +3100,7 @@ class VisualOMRViewerDemo:
         conn.close()
         # Update grid for the currently displayed sheet
         if hasattr(self, 'set_sheet_status'):
-            fn = os.path.basename(result.get("filename", ""))
+            fn = self._rel_key(result.get("filename", ""))
             if fn:
                 self.set_sheet_status(fn, saved_db="imported")
 
@@ -3148,13 +3166,8 @@ class VisualOMRViewerDemo:
         if not self.omr_dir or not os.path.exists(self.omr_dir):
             messagebox.showerror("Error", "Invalid folder path!")
             return
-        #----Added for creating error folder
-        
-        error_folder = os.path.join(self.omr_dir, "Error")
 
-        os.makedirs(error_folder, exist_ok=True)
-
-        image_paths = list(self.image_paths)  # already built from GUI folder
+        image_paths = list(self.image_paths)  # already built from GUI folder (includes subfolders)
         
         if not image_paths:
             messagebox.showwarning("Warning", "No images found in selected folder!")
@@ -3190,16 +3203,14 @@ class VisualOMRViewerDemo:
                     raise RuntimeError(f"Table '{table_name}' does not exist!")
 
                 for i, img_path in enumerate(image_paths, 1):
-                    filename = os.path.basename(img_path)
+                    # Use relative path as the display key so subfolder files are distinct
+                    rel_key = self._rel_key(img_path)
                     self._run_on_ui(
                         self._update_counterfoil_bulk_progress,
-                        i, total, filename, "pending", "pending")
+                        i, total, rel_key, "pending", "pending")
 
                     try:
-                        #res = process_single_sheet_for_demo(img_path)
-                        
                         try:
-
                             res = process_single_sheet_for_demo(img_path)
 
                             if res is None:
@@ -3208,24 +3219,16 @@ class VisualOMRViewerDemo:
                                 )
                             
                         except Exception as ex:
-
-                            move_to_error_folder(
-                                img_path,
-                                str(ex)
-                            )
-                            
-                            continue
-
-
-                        if not res:
-                            failed += 1
+                            # Each file's errors go into an Error folder next to that file
+                            move_to_error_folder(img_path, str(ex))
                             self._run_on_ui(
                                 self._update_counterfoil_bulk_progress,
-                                i, total, filename, "error", "error")
+                                i, total, rel_key, "error", "error")
+                            failed += 1
                             continue
 
                         extracted = self._extracted_status_from_result(res)
-                        self.omr_csv_records[filename] = self.build_export_row_from_result(res)
+                        self.omr_csv_records[rel_key] = self.build_export_row_from_result(res)
                         processed += 1
 
                         cursor.execute(
@@ -3237,14 +3240,14 @@ class VisualOMRViewerDemo:
 
                         self._run_on_ui(
                             self._update_counterfoil_bulk_progress,
-                            i, total, filename, extracted, "imported")
+                            i, total, rel_key, extracted, "imported")
 
                     except Exception as e:
                         failed += 1
-                        print(f"Error processing {filename}: {e}")
+                        print(f"Error processing {rel_key}: {e}")
                         self._run_on_ui(
                             self._update_counterfoil_bulk_progress,
-                            i, total, filename, "error", "error")
+                            i, total, rel_key, "error", "error")
 
                 conn.commit()
                 audit.log("counter_foil", "bulk_database_import",
