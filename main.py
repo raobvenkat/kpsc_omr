@@ -914,6 +914,7 @@ class MainApplication:
                 "Nominal Roll 2 Data Edit",
                 "Copy Discrepancy Sheets",
                 "Import Master Data",
+                "Download CF & NR Copies",
             ],
             self._on_discrepancy_selected,
         )
@@ -1097,7 +1098,9 @@ class MainApplication:
         if selection == "Import Master Data":
             self.open_import_master_data()
             return
-
+        if selection == "Download CF & NR Copies":
+            self.open_download_cf_nr()
+            return
         self.open_pending_discrepancy(selection)
 
     def _on_download_report_selected(self, _event=None) -> None:
@@ -1512,7 +1515,22 @@ class MainApplication:
             "VisualOMRViewerDemo",
             "Counterfoil Extraction Engine",
         )
+    #-----Added by venkat
+    def open_download_cf_nr(self):
 
+        user_id = (
+            self.current_user.user_id
+            if self.current_user
+            else 1
+        )
+
+        self._open_module_from_import(
+            "DownloadCounterFoilsNominalRolls",
+            "DownloadCounterFoilsNominalRolls",
+            "Download Counter Foils & Nominal Rolls Copies",
+            user_id
+        )
+    #-------------End if adding
     def open_subject_booklet_discrepancy(self) -> None:
         user_id = self.current_user.user_id if self.current_user else 1
         self._open_module_from_import(
