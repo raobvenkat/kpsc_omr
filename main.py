@@ -912,6 +912,7 @@ class MainApplication:
                 "Counter Foil Data Edit",
                 "Nominal Roll 1 Data Edit",
                 "Nominal Roll 2 Data Edit",
+                "View CF & NR Images",
                 "Copy Discrepancy Sheets",
                 "Import Master Data",
                 "Download CF & NR Copies",
@@ -1100,6 +1101,9 @@ class MainApplication:
             return
         if selection == "Download CF & NR Copies":
             self.open_download_cf_nr()
+            return
+        if selection == "View CF & NR Images":
+            self.open_cf_nr_viewer()
             return
         self.open_pending_discrepancy(selection)
 
@@ -1514,6 +1518,20 @@ class MainApplication:
             "CounterFoilScanning",
             "VisualOMRViewerDemo",
             "Counterfoil Extraction Engine",
+        )
+    def open_cf_nr_viewer(self):
+
+        user_id = (
+            self.current_user.user_id
+            if self.current_user
+            else 1
+        )
+
+        self._open_module_from_import(
+            "ViewCounterFoilNominalRoll",
+            "ViewCounterFoilNominalRoll",
+            "View Counter Foil & Nominal Roll",
+            user_id
         )
     #-----Added by venkat
     def open_download_cf_nr(self):

@@ -342,10 +342,12 @@ class DownloadCounterFoilsNominalRolls:
     # FILE COPY
     # =====================================================
 
+        
     def copy_file(
             self,
             source_file,
-            destination_folder):
+            destination_folder,
+            reg_no):
 
         try:
 
@@ -357,9 +359,6 @@ class DownloadCounterFoilsNominalRolls:
             if source_file.upper() == "NO FILE":
                 return "File Not Found"
 
-            if source_file == "":
-                return "File Not Found"
-
             if not os.path.exists(source_file):
                 return "File Not Found"
 
@@ -368,9 +367,12 @@ class DownloadCounterFoilsNominalRolls:
                 exist_ok=True
             )
 
+            # Preserve original extension
+            extension = os.path.splitext(source_file)[1]
+
             destination_file = os.path.join(
                 destination_folder,
-                os.path.basename(source_file)
+                f"{reg_no}{extension}"
             )
 
             shutil.copy2(
@@ -381,19 +383,9 @@ class DownloadCounterFoilsNominalRolls:
             return "Copied File"
 
         except PermissionError:
-
             return "Permission Denied"
 
-        except FileNotFoundError:
-
-            return "File Not Found"
-
-        except shutil.SameFileError:
-
-            return "Already Exists"
-
         except Exception as ex:
-
             return f"Copy Failed : {str(ex)}"
 
     # =====================================================
@@ -463,7 +455,8 @@ class DownloadCounterFoilsNominalRolls:
 
                     cf_status = self.copy_file(
                         cf_file,
-                        counterfoil_folder
+                        counterfoil_folder,
+                        reg_no
                     )
 
                 except Exception as ex:
@@ -481,7 +474,8 @@ class DownloadCounterFoilsNominalRolls:
 
                     nr_status = self.copy_file(
                         nr_file,
-                        nominalroll_folder
+                        nominalroll_folder,
+                        reg_no
                     )
 
                 except Exception as ex:
