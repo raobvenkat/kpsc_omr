@@ -30,6 +30,7 @@ class CounterFoilDataEdit:
         self.crop_zoom_factor = 0.25
 
         self.message_var = tk.StringVar()
+        self.record_count_var = tk.StringVar(value='Total Record Count : 0')
         self.edit_for_var = tk.StringVar()
         self.from_sheet_var = tk.StringVar()
         self.to_sheet_var = tk.StringVar()
@@ -522,6 +523,11 @@ class CounterFoilDataEdit:
         toolbar.pack(fill='x')
         ttk.Button(toolbar, text='+', command=self.zoom_in).pack(side='left')
         ttk.Button(toolbar, text='-', command=self.zoom_out).pack(side='left')
+        ttk.Label(
+            toolbar,
+            textvariable=self.record_count_var,
+            font=('Segoe UI', 11)
+        ).pack(side='left', padx=(15, 0))
 
         self.canvas = tk.Canvas(parent, bg='gray')
         self.canvas.pack(fill='both', expand=True)
@@ -616,6 +622,7 @@ class CounterFoilDataEdit:
             self.grid.insert('', 'end', values=values)
 
         self.message_var.set(f'Page {self.current_page} of {self.total_pages}')
+        self.record_count_var.set(f'Total Record Count : {len(self.filtered_rows)}')
 
     def filter_grid(self):
         sheet = self.sheetno_var.get().strip()
@@ -884,8 +891,16 @@ class CounterFoilDataEdit:
             cursor.close()
             conn.close()
             self.message_var.set('Record updated successfully.')
+            self.reset_controls()
             self.load_data()
-            self.select_next_row_after_update(record_id)
+            # Select and display the first record in the refreshed grid
+            children = self.grid.get_children()
+            if children:
+                first = children[0]
+                self.grid.selection_set(first)
+                self.grid.focus(first)
+                self.grid.see(first)
+                self.grid_row_selected()
         except Exception as ex:
             self.log_error('CounterFoilDataEdit', 'Update', ex)
             self.message_var.set(str(ex))

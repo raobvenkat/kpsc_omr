@@ -276,8 +276,12 @@ def align_grid_perfect(img, tpl, scale_x, scale_y, box, is_bw):
         est_grid_y = by
     else:
         bx, by, bw, bh = box
-        est_grid_x = bx + int(19 * scale_x)
-        est_grid_y = by + int(208 * scale_y)
+        # Use the template's grid_offset_from_box so every template (standard,
+        # counterfoil, blind/disabled) gets the correct offset — NOT a hardcoded
+        # (19, 208) that only matches the standard OMR layout.
+        dx, dy = tpl["grid_offset_from_box"]
+        est_grid_x = bx + int(dx * scale_x)
+        est_grid_y = by + int(dy * scale_y)
     
     detected_centroids = detect_bubbles_centroids(img, scale_x)
     
@@ -291,7 +295,9 @@ def align_grid_perfect(img, tpl, scale_x, scale_y, box, is_bw):
     max_score_x = -1
     best_avg_dist_x = 999999
     
-    for tx in range(-15, 15):
+    # Use a wider search window (±40 px) so that scan-to-scan variation and
+    # small box-detection offsets can always be corrected by snapping.
+    for tx in range(-40, 41):
         score = 0
         dist_sum = 0
         for i in range(b_conf["cols"]):
@@ -325,7 +331,7 @@ def align_grid_perfect(img, tpl, scale_x, scale_y, box, is_bw):
     C = np.array(detected_centroids, dtype=np.float32) if detected_centroids else np.empty((0, 2), dtype=np.float32)
     
     if len(C) > 0:
-        for ty in range(-15, 15):
+        for ty in range(-40, 41):
             P = T + [aligned_grid_x, est_grid_y + ty]
             diff = P[:, np.newaxis, :] - C[np.newaxis, :, :]
             dist2 = np.sum(diff**2, axis=2)
@@ -1167,21 +1173,29 @@ def detect_red_border_lines(img):
 
 def _build_counterfoil_line_mask(img):
     """
-    Build a binary mask that highlights the thick continuous border lines on a
-    counter foil sheet.  The border lines are either:
-      • Black  — dark pixels with low saturation
-      • Magenta/Red — hue wraps around 0° / 180° in HSV
+    Build a binary mask containing ONLY the long continuous border lines of the
+    counter foil sheet.
 
-    Both colour channels are combined so the function works regardless of which
-    print colour is used on the physical sheet.
+    Key insight: the outer border lines are the longest unbroken horizontal and
+    vertical strokes on the sheet.  We isolate them with morphological opening
+    using very wide/tall kernels rather than dumping all dark pixels into Hough
+    (which would pick up text rows, bubble circles etc. as false lines).
+
+    Strategy:
+      1. Create a raw dark-pixel mask (covers both black and red/magenta print).
+      2. Apply morphological opening with a long horizontal kernel to extract
+         only pixels that belong to long horizontal strokes.
+      3. Do the same with a long vertical kernel.
+      4. Combine the two — only the outer border lines survive.
     """
+    h, w = img.shape[:2]
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
 
-    # ── Black / dark-grey lines ───────────────────────────────────────────
-    # Value (brightness) < 80, saturation < 60  →  dark, nearly neutral pixel
-    black_mask = cv2.inRange(hsv,
-                             np.array([0,   0,  0]),
-                             np.array([180, 60, 80]))
+    # ── Raw dark-pixel mask (black/dark-grey lines) ───────────────────────
+    # Threshold chosen to capture printed lines without pulling in mid-grey
+    # background or faint paper texture.
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _, dark_mask = cv2.threshold(gray, 100, 255, cv2.THRESH_BINARY_INV)
 
     # ── Magenta / Red lines ───────────────────────────────────────────────
     lower_mag1 = np.array([0,   50,  50])
@@ -1193,11 +1207,26 @@ def _build_counterfoil_line_mask(img):
         cv2.inRange(hsv, lower_mag2, upper_mag2)
     )
 
-    combined = cv2.bitwise_or(black_mask, mag_mask)
+    raw_mask = cv2.bitwise_or(dark_mask, mag_mask)
 
-    # Dilate slightly to bridge sub-pixel gaps in scanned lines
+    # ── Morphological opening to keep only long continuous strokes ────────
+    # Horizontal kernel: width = 25 % of the image width, height = 1 px.
+    # A stroke must be at least 25 % wide to survive → outer border lines pass,
+    # short bubble-circle arcs, text characters and digit numerals are removed.
+    h_klen = max(40, int(w * 0.25))
+    v_klen = max(40, int(h * 0.25))
+
+    h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (h_klen, 1))
+    v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, v_klen))
+
+    h_lines = cv2.morphologyEx(raw_mask, cv2.MORPH_OPEN, h_kernel)
+    v_lines = cv2.morphologyEx(raw_mask, cv2.MORPH_OPEN, v_kernel)
+
+    combined = cv2.bitwise_or(h_lines, v_lines)
+
+    # Small dilation to bridge tiny gaps caused by scanner noise
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    combined = cv2.dilate(combined, kernel, iterations=2)
+    combined = cv2.dilate(combined, kernel, iterations=1)
     return combined
 
 
@@ -1238,15 +1267,15 @@ def _straighten_counterfoil(img):
     mask = _build_counterfoil_line_mask(img)
 
     # ── Step 2: Hough line detection ──────────────────────────────────────
-    # minLineLength = 40 % of the shorter dimension so only the long border
+    # minLineLength = 35 % of the shorter dimension so only the long border
     # lines pass; short internal cell lines are suppressed.
-    min_len = int(min(h, w) * 0.40)
+    min_len = int(min(h, w) * 0.35)
 
     lines = cv2.HoughLinesP(
         mask, 1, np.pi / 180,
-        threshold=60,
+        threshold=40,
         minLineLength=min_len,
-        maxLineGap=15
+        maxLineGap=20
     )
 
     if lines is None or len(lines) == 0:
@@ -1264,12 +1293,14 @@ def _straighten_counterfoil(img):
         angle_deg = math.degrees(math.atan2(y2 - y1, x2 - x1))
         length    = math.hypot(x2 - x1, y2 - y1)
 
-        if abs(angle_deg) < 3.0:                      # near-horizontal
+        # Accept lines within ±10° of horizontal / vertical to handle
+        # sheets that arrive visibly skewed (up to ~10° tilt)
+        if abs(angle_deg) < 10.0:                     # near-horizontal
             if length > best_h_length:
                 best_h_length   = length
                 best_horizontal = (x1, y1, x2, y2)
 
-        elif abs(abs(angle_deg) - 90.0) < 3.0:        # near-vertical
+        elif abs(abs(angle_deg) - 90.0) < 10.0:       # near-vertical
             if length > best_v_length:
                 best_v_length = length
                 best_vertical = (x1, y1, x2, y2)
@@ -1284,14 +1315,17 @@ def _straighten_counterfoil(img):
 
     elif best_vertical is not None:
         # Fallback: derive from the vertical border line
-        # A perfect vertical has atan2 = ±90°; deviation from ±90° = skew
         x1, y1, x2, y2 = best_vertical
         vert_angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
-        # vert_angle ≈ +90 for downward line → rotation_angle = vert_angle - 90
         if vert_angle > 0:
             rotation_angle = vert_angle - 90.0
         else:
             rotation_angle = vert_angle + 90.0
+
+    # Safety clamp: never rotate more than 10° — anything larger is a
+    # detection error (wrong line picked up), not a real scan tilt.
+    if abs(rotation_angle) > 10.0:
+        return img, identity, 0.0, center
 
     # ── Step 5: apply rotation ────────────────────────────────────────────
     if abs(rotation_angle) < 0.3:

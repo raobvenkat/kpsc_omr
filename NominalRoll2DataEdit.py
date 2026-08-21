@@ -31,6 +31,7 @@ class NominalRoll2DataEdit:
         self.crop_zoom_factor = 0.25
 
         self.message_var = tk.StringVar()
+        self.record_count_var = tk.StringVar(value='Total Record Count : 0')
         self.edit_for_var = tk.StringVar()
         self.from_sheet_var = tk.StringVar()
         self.to_sheet_var = tk.StringVar()
@@ -39,6 +40,8 @@ class NominalRoll2DataEdit:
         self.goto_row_var = tk.StringVar()
         self.edit_entry_widgets = {}
         self.current_focus_field = None
+        self.current_record_id = None
+        self.current_sheet_no = None
 
         self.create_controls()
         self.load_editfor_values()
@@ -327,7 +330,7 @@ class NominalRoll2DataEdit:
 
         self.lbl_id = ttk.Label(
             left_frame,
-            text='ID :',
+            text='Sheet No :',
             font=('Segoe UI', 14)
         )
 
@@ -634,6 +637,9 @@ class NominalRoll2DataEdit:
         self.btn_update = ttk.Button(button_row, text='Update', width=12)
         self.btn_update.pack(side='left', padx=2)
 
+        self.btn_delete = ttk.Button(button_row, text='Delete', width=12)
+        self.btn_delete.pack(side='left', padx=2)
+
         ttk.Button(button_row, text='Reset', command=self.reset_controls, width=12).pack(side='left', padx=2)
         ttk.Button(button_row, text='Close', command=self.root.destroy, width=12).pack(side='right', padx=2)
 
@@ -644,6 +650,11 @@ class NominalRoll2DataEdit:
         toolbar.pack(fill='x')
         ttk.Button(toolbar, text='+', command=self.zoom_in).pack(side='left')
         ttk.Button(toolbar, text='-', command=self.zoom_out).pack(side='left')
+        ttk.Label(
+            toolbar,
+            textvariable=self.record_count_var,
+            font=('Segoe UI', 11)
+        ).pack(side='left', padx=(15, 0))
 
         #self.canvas = tk.Canvas(parent, bg='gray')
         #self.canvas.pack(fill='both', expand=True)
@@ -782,6 +793,7 @@ class NominalRoll2DataEdit:
             self.grid.insert('', 'end', values=values)
 
         self.message_var.set(f'Page {self.current_page} of {self.total_pages}')
+        self.record_count_var.set(f'Total Record Count : {len(self.filtered_rows)}')
         self._select_first_row()
 
     def _select_first_row(self):
@@ -858,7 +870,9 @@ class NominalRoll2DataEdit:
         self.bind_page()
 
     def reset_controls(self):
-        self.lbl_id.config(text='ID :')
+        self.lbl_id.config(text='Sheet No :')
+        self.current_record_id = None
+        self.current_sheet_no = None
         for v in self.editor_vars.values():
             v.set('')
 
@@ -877,8 +891,11 @@ class NominalRoll2DataEdit:
             return
 
         self.lbl_id.config(
-            text=f'ID : {self._get_row_value(vals, "ID", "Id", "SlNo")}'
+            text=f'Sheet No : {self._get_row_value(vals, "SheetNo", "Sheet_No", "Sheet")}'
         )
+
+        self.current_record_id = self._get_row_value(vals, 'ID', 'Id', 'SlNo')
+        self.current_sheet_no = self._get_row_value(vals, 'SheetNo', 'Sheet_No', 'Sheet')
 
         self.lbl_row_number.config(
             text=f'Row No : {self._get_row_value(vals, "Row_Number", "RowNo", "Row Number")}'
@@ -1046,12 +1063,10 @@ class NominalRoll2DataEdit:
 
     def update_record(self):
         try:
-            id_text = self.lbl_id.cget('text')
-            if ':' not in id_text:
+            if self.current_record_id is None:
                 self.message_var.set('Please select a record.')
                 return
 
-            record_id = int(id_text.split(':')[1].strip())
             conn = db_credentials.get_sql_connection()
             cursor = conn.cursor()
             cursor.execute(
@@ -1071,7 +1086,7 @@ class NominalRoll2DataEdit:
                 (
                     self.edit_for_var.get(),
                     self.user_id,
-                    record_id,
+                    self.current_sheet_no,
                     self.editor_vars['center_code_var'].get(),
                     self.editor_vars['subcenter_var'].get(),
                     self.editor_vars['subject_code_var'].get(),
@@ -1149,12 +1164,11 @@ class NominalRoll2DataEdit:
 
     def skip_record(self):
         try:
-            id_text = self.lbl_id.cget('text')
-            if ':' not in id_text:
+            if self.current_record_id is None:
                 self.message_var.set('Please select a record.')
                 return
 
-            record_id = int(id_text.split(':')[1].strip())
+            record_id = int(self.current_record_id)
             conn = db_credentials.get_sql_connection()
             cursor = conn.cursor()
             cursor.execute(
@@ -1178,6 +1192,34 @@ class NominalRoll2DataEdit:
             self.load_data()
         except Exception as ex:
             self.log_error('NominalRoll2DataEdit', 'Skip', ex)
+            self.message_var.set(str(ex))
+
+    def delete_record(self):
+        try:
+            if self.current_record_id is None:
+                self.message_var.set('Please select a record.')
+                return
+
+            record_id = int(self.current_record_id)
+            conn = db_credentials.get_sql_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                'EXEC usp_DeleteNominalRoll2 @RID=?, @UserID=?',
+                (self.current_sheet_no, self.user_id)
+            )
+            conn.commit()
+            cursor.close()
+            conn.close()
+
+            self.message_var.set('Record deleted successfully.')
+            self.reset_controls()
+
+            # Refresh the grid, staying on the same page
+            saved_page = self.current_page
+            self.load_data_keep_page(saved_page)
+
+        except Exception as ex:
+            self.log_error('NominalRoll2DataEdit', 'Delete', ex)
             self.message_var.set(str(ex))
 
     def goto_row(self):
@@ -1233,6 +1275,7 @@ class NominalRoll2DataEdit:
     def wire_buttons(self):
         self.btn_update.configure(command=self.update_record)
         self.btn_skip.configure(command=self.skip_record)
+        self.btn_delete.configure(command=self.delete_record)
         self.btn_goto.configure(command=self.goto_row)
 
 
