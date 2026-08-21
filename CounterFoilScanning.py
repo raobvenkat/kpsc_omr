@@ -99,9 +99,13 @@ def straighten_sheet_using_corner_lines(img):
 
     h, w = img.shape[:2]
     center = (w//2, h//2)
+    
+    # Check if this is a B&W sheet (very low saturation)
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    avg_saturation = np.mean(hsv[:, :, 1])
+    is_bw = avg_saturation < 15
 
     # ── Detect RED-colored lines (Subject Code border, OMR border) ──────────────────
-    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     
     # Red hue in HSV: 0-10 and 170-180 (wraps around)
     # Expanded to capture more red variations
@@ -128,24 +132,15 @@ def straighten_sheet_using_corner_lines(img):
         maxLineGap=20
     )
     
-    # If red lines found, use them; otherwise fall back to grayscale detection
-    if lines_red is not None and len(lines_red) > 0:
-        lines = lines_red
-    else:
-        # Fallback: grayscale line detection with improved parameters
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)
-        # Dilate to strengthen line signals
-        kernel_fb = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        thresh = cv2.dilate(thresh, kernel_fb, iterations=2)
-        lines = cv2.HoughLinesP(
-            thresh,
-            1,
-            np.pi / 180,
-            threshold=60,
-            minLineLength=350,
-            maxLineGap=25
-        )
+    # For B&W sheets with NO red borders, DO NOT use grayscale fallback
+    # B&W counterfoil sheets should use _straighten_counterfoil instead
+    if is_bw or (lines_red is None or len(lines_red) == 0):
+        # B&W sheet or no red lines found — return identity (no rotation)
+        # This prevents detecting internal table borders as sheet tilts
+        M = cv2.getRotationMatrix2D(center, 0.0, 1.0)
+        return img, M, 0.0, center
+    
+    lines = lines_red
 
     if lines is None or len(lines) == 0:
         # No lines found; return identity
@@ -171,14 +166,14 @@ def straighten_sheet_using_corner_lines(img):
 
         length = math.hypot(x2 - x1, y2 - y1)
 
-        # Near horizontal (within 5 degrees of 0°)
-        if angle < 5:
+        # Near horizontal (within 3 degrees of 0°) — much stricter
+        if angle < 3:
             if length > best_h_length:
                 best_h_length = length
                 best_horizontal = (x1, y1, x2, y2)
 
-        # Near vertical (within 5 degrees of 90°)
-        elif abs(angle - 90) < 5:
+        # Near vertical (within 3 degrees of 90°) — much stricter
+        elif abs(angle - 90) < 3:
             if length > best_v_length:
                 best_v_length = length
                 best_vertical = (x1, y1, x2, y2)
@@ -197,9 +192,15 @@ def straighten_sheet_using_corner_lines(img):
         )
     )
 
-    # Only apply rotation if the angle is significant (> 0.5 degrees)
-    # This catches rotations like -5 degrees while still avoiding micro-adjustments
-    if abs(rotation_angle) < 0.5:
+    # CRITICAL: clamp to ±1° max — do not apply large rotations (prevents -15° errors)
+    if abs(rotation_angle) > 1.0:
+        # Large rotation detected — this is likely a false detection
+        # Return identity to avoid tilting the sheet
+        M = cv2.getRotationMatrix2D(center, 0.0, 1.0)
+        return img, M, 0.0, center
+
+    # Only apply rotation if the angle is truly significant (> 0.1 degrees)
+    if abs(rotation_angle) < 0.1:
         # Sheet is already straight; return identity transformation
         M = cv2.getRotationMatrix2D(center, 0.0, 1.0)
         return img, M, 0.0, center
@@ -1267,13 +1268,16 @@ def _straighten_counterfoil(img):
     mask = _build_counterfoil_line_mask(img)
 
     # ── Step 2: Hough line detection ──────────────────────────────────────
-    # minLineLength = 35 % of the shorter dimension so only the long border
-    # lines pass; short internal cell lines are suppressed.
-    min_len = int(min(h, w) * 0.35)
+    # minLineLength = 95% of the image width/height so ONLY the true outermost
+    # border lines are candidates. This is extremely aggressive filtering.
+    # Internal table cell borders and text rows are completely rejected.
+    min_len_h = int(w * 0.95)   # horizontal lines must span ≥95% of sheet width
+    min_len_v = int(h * 0.95)   # vertical lines must span ≥95% of sheet height
+    min_len = min(min_len_h, min_len_v)
 
     lines = cv2.HoughLinesP(
         mask, 1, np.pi / 180,
-        threshold=40,
+        threshold=100,
         minLineLength=min_len,
         maxLineGap=20
     )
@@ -1283,6 +1287,7 @@ def _straighten_counterfoil(img):
         return img, identity, 0.0, center
 
     # ── Step 3: separate horizontal and vertical candidates ───────────────
+    # CRITICAL: also validate that candidates are at the sheet edges, not interior
     best_horizontal = None
     best_h_length   = 0.0
     best_vertical   = None
@@ -1293,42 +1298,72 @@ def _straighten_counterfoil(img):
         angle_deg = math.degrees(math.atan2(y2 - y1, x2 - x1))
         length    = math.hypot(x2 - x1, y2 - y1)
 
-        # Accept lines within ±10° of horizontal / vertical to handle
-        # sheets that arrive visibly skewed (up to ~10° tilt)
-        if abs(angle_deg) < 10.0:                     # near-horizontal
-            if length > best_h_length:
+        # Accept lines only within ±1° of horizontal / vertical (EXTREMELY strict)
+        # to ensure only perfectly-aligned border lines are candidates
+        if abs(angle_deg) < 1.0:                      # near-horizontal (extremely strict)
+            # VALIDATION: horizontal line must be near the TOP or BOTTOM edge
+            # (within 20% of image height from edges — expanded from 15%)
+            y_avg = (y1 + y2) / 2.0
+            is_near_top = y_avg < (h * 0.20)
+            is_near_bottom = y_avg > (h * 0.80)
+            
+            if (is_near_top or is_near_bottom) and length > best_h_length:
                 best_h_length   = length
                 best_horizontal = (x1, y1, x2, y2)
 
-        elif abs(abs(angle_deg) - 90.0) < 10.0:       # near-vertical
-            if length > best_v_length:
+        elif abs(abs(angle_deg) - 90.0) < 1.0:        # near-vertical (extremely strict)
+            # VALIDATION: vertical line must be near the LEFT or RIGHT edge
+            # (within 20% of image width from edges — expanded from 15%)
+            x_avg = (x1 + x2) / 2.0
+            is_near_left = x_avg < (w * 0.20)
+            is_near_right = x_avg > (w * 0.80)
+            
+            if (is_near_left or is_near_right) and length > best_v_length:
                 best_v_length = length
                 best_vertical = (x1, y1, x2, y2)
 
     # ── Step 4: compute rotation angle ───────────────────────────────────
+    # CRITICAL CHANGE: Only trust HORIZONTAL border lines at top/bottom edges.
+    # Vertical lines can be internal cell borders — NEVER use a vertical line
+    # as the sole basis for rotation.
+    
     rotation_angle = 0.0
 
     if best_horizontal is not None:
-        # Primary: angle directly from the horizontal border line
+        # Use the horizontal border line (most reliable indicator)
         x1, y1, x2, y2 = best_horizontal
         rotation_angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
+        
+        # Cross-check with vertical line if available
+        if best_vertical is not None:
+            x1v, y1v, x2v, y2v = best_vertical
+            vert_angle = math.degrees(math.atan2(y2v - y1v, x2v - x1v))
+            expected_vert_angle_from_horiz = rotation_angle + 90.0 if rotation_angle >= -45 else rotation_angle - 90.0
+            
+            # Vertical line should be ~90° from horizontal. If it disagrees by > 5°, 
+            # the horizontal line is likely wrong too — reject rotation.
+            angle_diff = abs(vert_angle - expected_vert_angle_from_horiz)
+            if angle_diff > 180:
+                angle_diff = 360 - angle_diff
+            if angle_diff > 5.0:
+                # Lines don't agree — this is likely a detection error
+                return img, identity, 0.0, center
+    else:
+        # No horizontal line found — this is highly suspicious.
+        # Even if a vertical line exists, we don't trust it as the sole basis for rotation.
+        # Return identity (no rotation) to avoid tilting perfectly straight sheets.
+        return img, identity, 0.0, center
 
-    elif best_vertical is not None:
-        # Fallback: derive from the vertical border line
-        x1, y1, x2, y2 = best_vertical
-        vert_angle = math.degrees(math.atan2(y2 - y1, x2 - x1))
-        if vert_angle > 0:
-            rotation_angle = vert_angle - 90.0
-        else:
-            rotation_angle = vert_angle + 90.0
-
-    # Safety clamp: never rotate more than 10° — anything larger is a
-    # detection error (wrong line picked up), not a real scan tilt.
-    if abs(rotation_angle) > 10.0:
+    # Safety clamp: never rotate more than 1° — since we now only accept lines
+    # within ±1° of horizontal/vertical and at sheet edges, any rotation > 1° 
+    # is definitely a detection error (wrong line picked up).
+    if abs(rotation_angle) > 1.0:
         return img, identity, 0.0, center
 
     # ── Step 5: apply rotation ────────────────────────────────────────────
-    if abs(rotation_angle) < 0.3:
+    # Only apply rotation if the angle is meaningful (> 0.05°) to avoid
+    # unnecessary interpolation artifacts on already-straight sheets
+    if abs(rotation_angle) < 0.05:
         # Sheet is already straight enough — return identity to avoid
         # unnecessary interpolation artefacts
         return img, identity, 0.0, center
@@ -1585,12 +1620,10 @@ class VisualOMRViewerDemo:
         self.root = root
         self.root.title("OMR ICR OCR Extraction Engine")
 
-        # Responsive: fill 92% of screen, centered
+        # Responsive: maximise on startup
+        self.root.state("zoomed")
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        win_w = int(sw * 0.92)
-        win_h = int(sh * 0.90)
-        self.root.geometry(f"{win_w}x{win_h}+{(sw-win_w)//2}+{(sh-win_h)//2}")
         self.root.minsize(1024, 600)
         self.root.configure(bg="#1a1a22")
 
