@@ -1663,6 +1663,7 @@ def main() -> None:
         pass
 
     app = MainApplication(root)
+    root.state("zoomed")
     root.mainloop()
 
 
