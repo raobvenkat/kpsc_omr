@@ -2,7 +2,7 @@
 Secure SQL Server credential storage for the KPSC OMR suite.
 
 Credentials are encrypted with Windows DPAPI (user-scoped) and stored in
-%APPDATA%\\KPSC_OMR\\db_config.kpsc with a SHA-256 integrity hash.
+the application directory as db_config.kpsc with a SHA-256 integrity hash.
 """
 
 from __future__ import annotations
@@ -85,13 +85,11 @@ else:
         raise OSError("Secure credential storage is supported on Windows only.")
 
 
-#def get_config_dir() -> str:
-#    appdata = os.environ.get("APPDATA") or os.path.expanduser("~")
-#    return os.path.join(appdata, "KPSC_OMR")
-
 def get_config_dir() -> str:
-    appdata = os.environ.get("APPDATA") or os.path.expanduser("~")
-    return os.path.join(appdata, "KPSC_OMR")
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+
+    return os.path.dirname(os.path.abspath(__file__))
 
 
 def get_config_path() -> str:
