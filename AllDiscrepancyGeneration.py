@@ -213,7 +213,7 @@ class AllDiscrepancyGeneration:
                     self.user_id
                 )
             )
-
+            conn.commit()
             self.tree.delete(*self.tree.get_children())
 
             self.columns = [

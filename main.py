@@ -1703,6 +1703,11 @@ class MainApplication:
             on_success=self._refresh_db_status,
         )
 
+    def _get_current_user_id(self) -> int:
+        if self.current_user is not None:
+            return self.current_user.user_id
+        return 1
+
     def _open_module(self, factory: Callable[..., object], title: str, *args: object) -> None:
         if self._open_module_window is not None and self._open_module_window.winfo_exists():
             self._open_module_window.lift()
@@ -1741,8 +1746,10 @@ class MainApplication:
         module_root.minsize(max(1024, int(sw * 0.65)), max(620, int(sh * 0.62)))
         module_root.configure(bg="#1a1a22")
 
+        resolved_args = [arg() if callable(arg) else arg for arg in args]
+
         try:
-            factory(module_root, *args)
+            factory(module_root, *resolved_args)
         except Exception as exc:
             audit.log(
                 "application",
@@ -1778,24 +1785,21 @@ class MainApplication:
         *args: object,
         configure_module: Optional[Callable[[object], None]] = None,
     ) -> None:
-        try:
-            module = importlib.import_module(module_name)
-            if configure_module is not None:
-                configure_module(module)
-            factory = getattr(module, class_name)
-        except Exception as exc:
-            audit.log(
-                "application",
-                "module_import_failed",
-                outcome="failed",
-                details={"module": module_name, "error": str(exc)},
-            )
-            messagebox.showerror(
-                f"{title} Failed",
-                f"The module could not be loaded.\n\n{exc}\n\n{traceback.format_exc()}",
-                parent=self.root,
-            )
-            return
+        def factory(module_root: tk.Toplevel, *resolved_args: object) -> object:
+            try:
+                module = importlib.import_module(module_name)
+                if configure_module is not None:
+                    configure_module(module)
+                cls = getattr(module, class_name)
+                return cls(module_root, *resolved_args)
+            except Exception as exc:
+                audit.log(
+                    "application",
+                    "module_import_failed",
+                    outcome="failed",
+                    details={"module": module_name, "error": str(exc)},
+                )
+                raise
 
         self._open_module(factory, title, *args)
 
@@ -1835,44 +1839,30 @@ class MainApplication:
             "CounterFoilScanning",
             "VisualOMRViewerDemo",
             "Counterfoil Extraction Engine",
+            self._get_current_user_id,
         )
     def open_cf_nr_viewer(self):
-
-        user_id = (
-            self.current_user.user_id
-            if self.current_user
-            else 1
-        )
-
         self._open_module_from_import(
             "ViewCounterFoilNominalRoll",
             "ViewCounterFoilNominalRoll",
             "View Counter Foil & Nominal Roll",
-            user_id
+            self._get_current_user_id,
         )
     #-----Added by venkat
     def open_download_cf_nr(self):
-
-        user_id = (
-            self.current_user.user_id
-            if self.current_user
-            else 1
-        )
-
         self._open_module_from_import(
             "DownloadCounterFoilsNominalRolls",
             "DownloadCounterFoilsNominalRolls",
             "Download Counter Foils & Nominal Rolls Copies",
-            user_id
+            self._get_current_user_id,
         )
     #-------------End if adding
     def open_subject_booklet_discrepancy(self) -> None:
-        user_id = self.current_user.user_id if self.current_user else 1
         self._open_module_from_import(
             "CounterFoilSubBSNoEdit",
             "SubjectBookletDiscrepancy",
             "Subject Code & Booklet Serial No Discrepancy",
-            configure_module=lambda module: setattr(module, "LOGGED_USER_ID", user_id),
+            configure_module=lambda module: setattr(module, "LOGGED_USER_ID", self._get_current_user_id()),
         )
 
     def open_attendance_module(self) -> None:
@@ -1883,12 +1873,11 @@ class MainApplication:
         )
 
     def open_omr_ink_detection(self) -> None:
-        user_id = self.current_user.user_id if self.current_user is not None else 1
         self._open_module_from_import(
             "OMRInkDetection",
             "OMRInkDetection",
             "OMR Ink Detection",
-            user_id,
+            self._get_current_user_id,
         )
     def open_Crop_Clean_Images(self) -> None:
         self._open_module_from_import(
@@ -1900,39 +1889,35 @@ class MainApplication:
     open_Crop_Clean_images = open_Crop_Clean_Images
     open_Crop_Clean_image = open_Crop_Clean_Images
     def CounterFoilDataEdit(self) -> None:
-        user_id = self.current_user.user_id if self.current_user is not None else 1
         self._open_module_from_import(
             "CounterFoilDataEdit",
             "CounterFoilDataEdit",
             "Counter Foil Data Edit",
-            user_id,
+            self._get_current_user_id,
         )
 
     def NominalRoll1DataEdit(self) -> None:
-        user_id = self.current_user.user_id if self.current_user is not None else 1
         self._open_module_from_import(
             "NominalRoll1DataEdit",
             "NominalRoll1DataEdit",
             "Nominal Roll 1 Data Edit",
-            user_id,
+            self._get_current_user_id,
         )
 
     def NominalRoll2DataEdit(self) -> None:
-        user_id = self.current_user.user_id if self.current_user is not None else 1
         self._open_module_from_import(
             "NominalRoll2DataEdit",
             "NominalRoll2DataEdit",
             "Nominal Roll 2 Data Edit",
-            user_id,
+            self._get_current_user_id,
         )
 
     def ink_detection(self) -> None:
-        user_id = self.current_user.user_id if self.current_user is not None else 1
         self._open_module_from_import(
             "ink_detection",
             "ink_detection",
             "Ink Detection",
-            user_id,
+            self._get_current_user_id,
         )
     def open_pending_discrepancy(self, title: str) -> None:
         # Add future discrepancy module imports here, for example:
@@ -1943,33 +1928,21 @@ class MainApplication:
             f"{title} is listed and ready to be wired. Add the Python module import and handler in this method when you are ready.",
             parent=self.root,
         )
-    def CounterFoilDataEdit(self) -> None:
-        user_id = self.current_user.user_id if self.current_user is not None else 1
-        self._open_module_from_import(
-            "CounterFoilDataEdit",
-            "CounterFoilDataEdit",
-            "Counter Foil Data Edit",
-            user_id,
-        )
-            
+
     def open_copy_discrepancy_sheets(self):
-
-        user_id = self.current_user.user_id if self.current_user else 1
-
         self._open_module_from_import(
             "CopyDiscrepancySheets",
             "CopyDiscrepancySheets",
             "Copy Discrepancy Sheets",
-            user_id
+            self._get_current_user_id,
         )
 
     def open_import_master_data(self) -> None:
-        user_id = self.current_user.user_id if self.current_user is not None else 1
         self._open_module_from_import(
             "ImportMasterData",
             "ImportMasterData",
             "Import Master Data",
-            user_id,
+            self._get_current_user_id,
         )
 
 

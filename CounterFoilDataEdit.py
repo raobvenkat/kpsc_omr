@@ -330,7 +330,7 @@ class CounterFoilDataEdit:
                 x1 = int(w * 0.62)
                 x2 = int(w * 0.95)
                 y1 = int(h * 0.68)
-                y2 = int(h * 0.78)
+                y2 = int(h * 0.82)
             elif field_name == 'barcode_var':
                 x1 = int(w * 0.55)
                 x2 = w

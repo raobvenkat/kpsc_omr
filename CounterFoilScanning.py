@@ -1662,8 +1662,9 @@ def move_to_error_folder(file_path, error_message=""):
 # TKINTER DUST-FREE visual EXTRACTOR APP
 # ──────────────────────────────────────────────────────────
 class VisualOMRViewerDemo:
-    def __init__(self, root):
+    def __init__(self, root, user_id=1):
         self.root = root
+        self.user_id = user_id
         self.root.title("OMR ICR OCR Extraction Engine")
 
         # Responsive: maximise on startup
@@ -3161,7 +3162,7 @@ class VisualOMRViewerDemo:
             "filename", "barcode", "bubble_regno", "handwritten_regno",
             "final_regno", "discrepancy", "discrepancy_detail",
             "candidate_signed", "invigilator_signed", "subject_code",
-            "BookletSlNo", "omr_threshold", "whitenerflag"
+            "BookletSlNo", "omr_threshold", "whitenerflag","updated_by"
         ]
         values = [
             result["filename"],
@@ -3176,7 +3177,8 @@ class VisualOMRViewerDemo:
             result["subject_code"],
             result.get("BookletSlNo", result.get("booklet_number", "")),
             result.get("omr_threshold", 0.0),
-            int(bool(result.get("whitenerflag", False)))
+            int(bool(result.get("whitenerflag", False))),
+            self.user_id
         ]
 
         if self.check_column_exists(conn, table_name, "bubble_Th_status"):
