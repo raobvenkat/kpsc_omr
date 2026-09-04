@@ -3,111 +3,582 @@ import cv2
 import shutil
 import threading
 import numpy as np
-import tkinter as tk
 
-from tkinter import ttk
-from tkinter import filedialog
-from tkinter import messagebox
+from tkinter import *
+from tkinter import ttk, filedialog, messagebox
+
+SUPPORTED_EXTENSIONS = (
+    ".jpg", ".jpeg", ".png",
+    ".bmp", ".tif", ".tiff"
+)
+
+DPI = 300
+MM_TO_PX = DPI / 25.4
+
+LEFT_MARGIN = int(5 * MM_TO_PX)
+#TOP_MARGIN = int(2 * MM_TO_PX)
+TOP_MARGIN = int(10 * MM_TO_PX)
+RIGHT_MARGIN = int(5 * MM_TO_PX)
+BOTTOM_MARGIN = int(10 * MM_TO_PX)
 
 
-class CropCleanApp:
+# ----- red tap mark removal
+def remove_red_tape(img):
+
+    hsv = cv2.cvtColor(
+        img,
+        cv2.COLOR_BGR2HSV
+    )
+
+    # Wider red/orange detection
+
+    lower1 = np.array([0, 20, 80])
+    upper1 = np.array([25, 255, 255])
+
+    lower2 = np.array([160, 20, 80])
+    upper2 = np.array([180, 255, 255])
+
+    mask1 = cv2.inRange(
+        hsv,
+        lower1,
+        upper1
+    )
+
+    mask2 = cv2.inRange(
+        hsv,
+        lower2,
+        upper2
+    )
+
+    mask = cv2.bitwise_or(
+        mask1,
+        mask2
+    )
+
+    # Only check top-right region
+    h, w = img.shape[:2]
+
+    region = np.zeros(
+        (h, w),
+        dtype=np.uint8
+    )
+
+    region[
+        0:int(h * 0.20),
+        int(w * 0.80):w
+    ] = 255
+
+    mask = cv2.bitwise_and(
+        mask,
+        region
+    )
+
+    kernel = np.ones(
+        (9, 9),
+        np.uint8
+    )
+
+    mask = cv2.dilate(
+        mask,
+        kernel,
+        iterations=3
+    )
+
+    result = img.copy()
+
+    result[mask > 0] = (
+        255,
+        255,
+        255
+    )
+
+    return result
+
+# ------borders cleaning---------
+def remove_scanner_borders(img):
+
+    gray = cv2.cvtColor(
+        img,
+        cv2.COLOR_BGR2GRAY
+    )
+
+    # Anything darker than 80 becomes black
+    _, thresh = cv2.threshold(
+        gray,
+        80,
+        255,
+        cv2.THRESH_BINARY
+    )
+
+    kernel = cv2.getStructuringElement(
+        cv2.MORPH_RECT,
+        (7, 7)
+    )
+
+    thresh = cv2.morphologyEx(
+        thresh,
+        cv2.MORPH_CLOSE,
+        kernel,
+        iterations=2
+    )
+
+    result = img.copy()
+
+    result[thresh == 0] = (255, 255, 255)
+
+    return result
+#-----------------
+def deskew_image(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    coords = np.column_stack(np.where(gray < 200))
+
+    if len(coords) < 100:
+        return img
+
+    angle = cv2.minAreaRect(coords)[-1]
+
+    if angle < -45:
+        angle = 90 + angle
+
+    if angle > 15:
+        angle = 15
+
+    if angle < -15:
+        angle = -15
+
+    #h, w = img.shape[:2]
+    # Force-clean top-right corner area
+
+    h, w = img.shape[:2]
+
+    img[
+        0:int(h * 0.08),
+        int(w * 0.95):w
+    ] = (255, 255, 255)
+    
+    M = cv2.getRotationMatrix2D(
+        (w // 2, h // 2),
+        angle,
+        1.0
+    )
+
+    return cv2.warpAffine(
+        img,
+        M,
+        (w, h),
+        borderValue=(255, 255, 255)
+    )
+
+
+def detect_form_border(img):
+
+    gray = cv2.cvtColor(
+        img,
+        cv2.COLOR_BGR2GRAY
+    )
+
+    _, bw = cv2.threshold(
+        gray,
+        220,
+        255,
+        cv2.THRESH_BINARY_INV
+    )
+
+    h, w = bw.shape
+
+    vertical_sum = np.sum(
+        bw > 0,
+        axis=0
+    )
+
+    horizontal_sum = np.sum(
+        bw > 0,
+        axis=1
+    )
+
+    # LEFT BORDER
+    search_left = int(w * 0.25)
+
+    left_candidates = np.where(
+        vertical_sum[:search_left]
+        > vertical_sum.max() * 0.35
+    )[0]
+
+    if len(left_candidates) == 0:
+        raise Exception("Left border not found")
+
+    left_x = left_candidates[0]
+
+    # RIGHT BORDER
+    search_right = int(w * 0.75)
+
+    right_candidates = np.where(
+        vertical_sum[search_right:]
+        > vertical_sum.max() * 0.35
+    )[0]
+
+    if len(right_candidates) == 0:
+        raise Exception("Right border not found")
+
+    right_x = (
+        right_candidates[-1]
+        + search_right
+    )
+
+    # TOP BORDER
+    top_candidates = np.where(
+        horizontal_sum[:int(h * 0.25)]
+        > horizontal_sum.max() * 0.35
+    )[0]
+
+    if len(top_candidates) == 0:
+        raise Exception("Top border not found")
+
+    #top_y = top_candidates[0]
+    top_y = max(
+    0,
+    top_candidates[0] - 20
+    )
+
+
+    # BOTTOM BORDER
+    bottom_start = int(h * 0.60)
+
+    bottom_candidates = np.where(
+        horizontal_sum[bottom_start:]
+        > horizontal_sum.max() * 0.35
+    )[0]
+
+    if len(bottom_candidates) == 0:
+        raise Exception("Bottom border not found")
+
+    bottom_y = (
+        bottom_candidates[-1]
+        + bottom_start
+    )
+
+    return (
+        left_x,
+        top_y,
+        right_x,
+        bottom_y
+    )
+
+def validate_sheet_coverage(img):
+
+    gray = cv2.cvtColor(
+        img,
+        cv2.COLOR_BGR2GRAY
+    )
+
+    _, bw = cv2.threshold(
+        gray,
+        245,
+        255,
+        cv2.THRESH_BINARY_INV
+    )
+
+    contours, _ = cv2.findContours(
+        bw,
+        cv2.RETR_EXTERNAL,
+        cv2.CHAIN_APPROX_SIMPLE
+    )
+
+    if not contours:
+        return False
+
+    largest = max(
+        contours,
+        key=cv2.contourArea
+    )
+
+    x, y, w, h = cv2.boundingRect(
+        largest
+    )
+
+    img_h, img_w = img.shape[:2]
+
+    width_ratio = w / img_w
+    height_ratio = h / img_h
+
+    # Relaxed checks
+
+    if width_ratio < 0.70:
+        return False
+
+    if height_ratio < 0.55:
+        return False
+
+    # Reject only if sheet is very low
+    if y > img_h * 0.25:
+        return False
+
+    return True
+
+def crop_sheet(img):
+
+    original = img.copy()
+
+    try:
+
+        # -------------------------
+        # DESKEW
+        # -------------------------
+
+        img = deskew_image(img)
+
+        # -------------------------
+        # REMOVE SCANNER BORDERS
+        # -------------------------
+
+        img = remove_scanner_borders(img)
+
+        # -------------------------
+        # REMOVE RED STICKER
+        # -------------------------
+
+        img = remove_red_tape(img)
+
+        # -------------------------
+        # VALIDATE SHEET POSITION
+        # -------------------------
+
+        gray = cv2.cvtColor(
+            img,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        _, bw = cv2.threshold(
+            gray,
+            245,
+            255,
+            cv2.THRESH_BINARY_INV
+        )
+
+        contours, _ = cv2.findContours(
+            bw,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        if not contours:
+            raise Exception(
+                "No sheet detected"
+            )
+
+        largest = max(
+            contours,
+            key=cv2.contourArea
+        )
+
+        x, y, w, h = cv2.boundingRect(
+            largest
+        )
+
+        img_h, img_w = img.shape[:2]
+
+        width_ratio = w / img_w
+        height_ratio = h / img_h
+
+        # Reject only badly scanned sheets
+
+        if width_ratio < 0.55:
+            raise Exception(
+                "Sheet width too small"
+            )
+
+        if height_ratio < 0.40:
+            raise Exception(
+                "Sheet height too small"
+            )
+
+        # Reject huge blank scanner area above sheet
+        if y > img_h * 0.35:
+            raise Exception(
+                "Large blank area above sheet"
+            )
+
+        # -------------------------
+        # DETECT FORM BORDER
+        # -------------------------
+
+        left, top, right, bottom = \
+            detect_form_border(img)
+
+        crop_left = max(
+            0,
+            left - LEFT_MARGIN
+        )
+
+        crop_top = max(
+            0,
+            top - max(TOP_MARGIN, 40)
+        )
+
+        crop_right = min(
+            img.shape[1],
+            right + RIGHT_MARGIN
+        )
+
+        crop_bottom = min(
+            img.shape[0],
+            bottom + BOTTOM_MARGIN
+        )
+
+        # -------------------------
+        # PARTIAL CROP CHECK
+        # -------------------------
+
+        crop_width = (
+            crop_right - crop_left
+        )
+
+        crop_height = (
+            crop_bottom - crop_top
+        )
+        width_ratio = crop_width / img.shape[1]
+
+        if width_ratio < 0.85:
+            raise Exception(
+                "Internal divider detected"
+            )
+
+        if crop_width < img.shape[1] * 0.60:
+            raise Exception(
+                "Partial crop width"
+            )
+
+        if crop_height < img.shape[0] * 0.50:
+            raise Exception(
+                "Partial crop height"
+            )
+        # Subject code protection
+
+        if crop_top > 50:
+
+            raise Exception(
+                "Top portion removed"
+            )
+        # -------------------------
+        # KEEP ONLY CROP AREA
+        # -------------------------
+
+        result = np.full_like(
+            img,
+            255
+        )
+
+        result[
+            crop_top:crop_bottom,
+            crop_left:crop_right
+        ] = img[
+            crop_top:crop_bottom,
+            crop_left:crop_right
+        ]
+
+        cropped = result[
+            crop_top:crop_bottom,
+            crop_left:crop_right
+        ]
+
+        # -------------------------
+        # REMOVE TOP DOTTED LINE
+        # -------------------------
+
+        dot_height = min(
+            int(10 * MM_TO_PX),
+            cropped.shape[0]
+        )
+
+        cropped[
+            0:dot_height,
+            :
+        ] = 255
+
+        return cropped, "cropped"
+
+    except Exception as ex:
+
+        raise Exception(str(ex))
+
+
+class CropApplication:
 
     def __init__(self, root):
 
         self.root = root
-        self.root.title("Crop & Clean the Image")
-        self.root.geometry("850x350")
-        self.root.resizable(False, False)
 
-        self.folder_path = tk.StringVar()
-        self.current_folder = tk.StringVar()
-        self.current_file = tk.StringVar()
-
-        self.create_ui()
-
-    def create_ui(self):
-
-        title = ttk.Label(
-            self.root,
-            text="Crop & Clean the Image",
-            font=("Arial", 16, "bold")
+        root.title(
+            "Clean & Crop the Images"
         )
-        title.pack(pady=10)
 
-        frame = ttk.Frame(self.root, padding=10)
-        frame.pack(fill="both", expand=True)
+        root.geometry("750x280")
 
-        top_frame = ttk.Frame(frame)
-        top_frame.pack(fill="x")
+        self.folder_path = StringVar()
 
-        txt_folder = ttk.Entry(
-            top_frame,
-            textvariable=self.folder_path,
-            width=90
+        Label(
+            root,
+            text="Source Folder"
+        ).pack(pady=10)
+
+        frame = Frame(root)
+
+        frame.pack(fill=X, padx=10)
+
+        Entry(
+            frame,
+            textvariable=self.folder_path
+        ).pack(
+            side=LEFT,
+            fill=X,
+            expand=True
         )
-        txt_folder.pack(side="left", padx=5)
 
-        btn_browse = ttk.Button(
-            top_frame,
+        Button(
+            frame,
             text="Browse",
             command=self.select_folder
-        )
-        btn_browse.pack(side="left")
+        ).pack(side=LEFT, padx=5)
 
-        ttk.Label(
-            frame,
-            text="Current Folder:"
-        ).pack(anchor="w", pady=(20, 0))
+        btn_frame = Frame(root)
 
-        ttk.Label(
-            frame,
-            textvariable=self.current_folder,
-            foreground="blue"
-        ).pack(anchor="w")
+        btn_frame.pack(pady=15)
 
-        ttk.Label(
-            frame,
-            text="Current Image:"
-        ).pack(anchor="w", pady=(15, 0))
+        Button(
+            btn_frame,
+            text="Preview Crop",
+            width=15,
+            command=self.preview_crop
+        ).pack(side=LEFT, padx=5)
 
-        ttk.Label(
-            frame,
-            textvariable=self.current_file,
-            foreground="green"
-        ).pack(anchor="w")
-
-        self.progress = ttk.Progressbar(
-            frame,
-            orient="horizontal",
-            mode="determinate",
-            length=750
-        )
-
-        self.progress.pack(pady=20)
-
-        self.lbl_progress = ttk.Label(
-            frame,
-            text="0 / 0"
-        )
-
-        self.lbl_progress.pack()
-
-        button_frame = ttk.Frame(frame)
-        button_frame.pack(pady=20)
-
-        ttk.Button(
-            button_frame,
+        Button(
+            btn_frame,
             text="Process",
             width=15,
             command=self.start_process
-        ).pack(side="left", padx=10)
+        ).pack(side=LEFT, padx=5)
 
-        ttk.Button(
-            button_frame,
+        Button(
+            btn_frame,
             text="Close",
             width=15,
-            command=self.root.destroy
-        ).pack(side="left")
+            command=root.destroy
+        ).pack(side=LEFT, padx=5)
+
+        self.progress = ttk.Progressbar(
+            root,
+            length=650
+        )
+
+        self.progress.pack(pady=10)
+
+        self.status = Label(
+            root,
+            text="Ready"
+        )
+
+        self.status.pack()
 
     def select_folder(self):
 
@@ -115,560 +586,228 @@ class CropCleanApp:
 
         if folder:
             self.folder_path.set(folder)
-    def remove_scanner_drag_top(self, image):
 
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    def preview_crop(self):
 
-        row_mean = np.mean(gray, axis=1)
+        folder = self.folder_path.get()
 
-        crop_y = 0
+        if not folder:
+            return
 
-        for y in range(min(image.shape[0] // 3, 1500)):
+        for root_dir, _, files in os.walk(folder):
 
-            if row_mean[y] > 220:
+            for file in files:
 
-                consecutive = 0
-
-                for yy in range(
-                    y,
-                    min(y + 40, len(row_mean))
+                if file.lower().endswith(
+                    SUPPORTED_EXTENSIONS
                 ):
 
-                    if row_mean[yy] > 220:
-                        consecutive += 1
+                    path = os.path.join(
+                        root_dir,
+                        file
+                    )
 
-                if consecutive > 25:
-                    crop_y = y
-                    break
+                    img = cv2.imread(path)
 
-        if crop_y > 0:
-            return image[crop_y:, :], True
+                    if img is None:
+                        continue
 
-        return image, False
+                    try:
 
+                        left, top, right, bottom = \
+                            detect_form_border(img)
 
+                        preview = img.copy()
 
-    def crop_document_contour(self, image):
+                        cv2.rectangle(
+                            preview,
+                            (left, top),
+                            (right, bottom),
+                            (0, 255, 255),
+                            3
+                        )
 
-        gray = cv2.cvtColor(
-            image,
-            cv2.COLOR_BGR2GRAY
-        )
+                        cv2.imshow(
+                            "Crop Preview",
+                            preview
+                        )
 
-        blur = cv2.GaussianBlur(
-                gray,
-                (5, 5),
-                0
-            )
+                        cv2.waitKey(0)
+                        cv2.destroyAllWindows()
 
-        thresh = cv2.adaptiveThreshold(
-            gray,
-            255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY,
-            35,
-            15
-        )
+                    except Exception as ex:
 
-        contours, _ = cv2.findContours(
-            thresh,
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE
-        )
+                        messagebox.showerror(
+                            "Preview Error",
+                            str(ex)
+                        )
 
-        if len(contours) == 0:
-            return image, False
-
-        page = max(
-            contours,
-            key=cv2.contourArea
-        )
-
-        x, y, w, h = cv2.boundingRect(
-            page
-        )
-
-        margin = 10
-
-        x = max(0, x - margin)
-        y = max(0, y - margin)
-
-        w = min(
-            image.shape[1] - x,
-            w + margin * 2
-        )
-
-        h = min(
-            image.shape[0] - y,
-            h + margin * 2
-        )
-
-        cropped = image[
-            y:y+h,
-            x:x+w
-        ]
-
-        changed = (
-            x > 0 or
-            y > 0 or
-            w < image.shape[1] or
-            h < image.shape[0]
-        )
-
-        return cropped, changed
-
-
-    def deskew_image(self, image):
-
-        gray = cv2.cvtColor(
-            image,
-            cv2.COLOR_BGR2GRAY
-        )
-
-        edges = cv2.Canny(
-            gray,
-            50,
-            150
-        )
-
-        lines = cv2.HoughLinesP(
-            edges,
-            1,
-            np.pi / 180,
-            threshold=100,
-            minLineLength=300,
-            maxLineGap=20
-        )
-
-        if lines is None:
-            return image, False
-
-        angles = []
-
-        for line in lines:
-
-            x1, y1, x2, y2 = line[0]
-
-            angle = np.degrees(
-                np.arctan2(
-                    y2 - y1,
-                    x2 - x1
-                )
-            )
-
-            if abs(angle) <= 15:
-                angles.append(angle)
-
-        if len(angles) == 0:
-            return image, False
-
-        angle = np.median(angles)
-
-        if abs(angle) < 0.5:
-            return image, False
-
-        h, w = image.shape[:2]
-
-        M = cv2.getRotationMatrix2D(
-            (w // 2, h // 2),
-            angle,
-            1.0
-        )
-
-        rotated = cv2.warpAffine(
-            image,
-            M,
-            (w, h),
-            flags=cv2.INTER_CUBIC,
-            borderMode=cv2.BORDER_REPLICATE
-        )
-
-        return rotated, True
-
+                    return
 
     def start_process(self):
-
-        if not self.folder_path.get():
-
-            messagebox.showerror(
-                "Error",
-                "Please select a folder."
-            )
-            return
 
         threading.Thread(
             target=self.process_folder,
             daemon=True
         ).start()
 
-    # ----------------------------------
-    # Remove Red Mark
-    # ----------------------------------
-
-    def remove_red_mark(self, image):
-
-        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-
-        lower_red1 = np.array([0, 70, 70])
-        upper_red1 = np.array([10, 255, 255])
-
-        lower_red2 = np.array([170, 70, 70])
-        upper_red2 = np.array([180, 255, 255])
-
-        mask1 = cv2.inRange(
-            hsv,
-            lower_red1,
-            upper_red1
-        )
-
-        mask2 = cv2.inRange(
-            hsv,
-            lower_red2,
-            upper_red2
-        )
-
-        red_mask = cv2.bitwise_or(
-            mask1,
-            mask2
-        )
-
-        h, w = image.shape[:2]
-
-        roi = np.zeros_like(red_mask)
-
-        roi[
-            :int(h * 0.15),
-            int(w * 0.85):
-        ] = 255
-
-        red_mask = cv2.bitwise_and(
-            red_mask,
-            roi
-        )
-
-        changed = np.count_nonzero(red_mask) > 0
-
-        if changed:
-
-            red_mask = cv2.dilate(
-                red_mask,
-                np.ones((5, 5), np.uint8),
-                iterations=2
-            )
-
-            image = cv2.inpaint(
-                image,
-                red_mask,
-                5,
-                cv2.INPAINT_TELEA
-            )
-
-        return image, changed
-
-    # ----------------------------------
-    # Auto Crop Black Borders
-    # ----------------------------------
-
-    def crop_black_border(self, image):
-
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-        row_mean = np.mean(gray, axis=1)
-        col_mean = np.mean(gray, axis=0)
-
-        threshold = 180
-
-        top = 0
-        for i in range(len(row_mean)):
-            if row_mean[i] > threshold:
-                top = i
-                break
-
-        bottom = len(row_mean) - 1
-        for i in range(len(row_mean) - 1, -1, -1):
-            if row_mean[i] > threshold:
-                bottom = i
-                break
-
-        left = 0
-        for i in range(len(col_mean)):
-            if col_mean[i] > threshold:
-                left = i
-                break
-
-        right = len(col_mean) - 1
-        for i in range(len(col_mean) - 1, -1, -1):
-            if col_mean[i] > threshold:
-                right = i
-                break
-
-        margin = 5
-
-        top = max(0, top - margin)
-        left = max(0, left - margin)
-
-        bottom = min(
-            image.shape[0] - 1,
-            bottom + margin
-        )
-
-        right = min(
-            image.shape[1] - 1,
-            right + margin
-        )
-
-        cropped = image[
-            top:bottom + 1,
-            left:right + 1
-        ]
-
-        changed = (
-            top > 0 or
-            left > 0 or
-            right < image.shape[1] - 1 or
-            bottom < image.shape[0] - 1
-        )
-
-        return cropped, changed
-
-    # ----------------------------------
-    # Process Single Image
-    # ----------------------------------
-
-    def process_image(self, image_path):
-
-        image = cv2.imread(image_path)
-
-        if image is None:
-            raise Exception(
-                f"Cannot read image: {image_path}"
-            )
-
-        image, scanner_changed = (
-            self.remove_scanner_drag_top(image)
-        )
-
-        image, deskew_changed = (
-            self.deskew_image(image)
-        )
-
-        image, border_changed = (
-            self.crop_black_border(image)
-        )
-
-        image, red_changed = (
-            self.remove_red_mark(image)
-        )
-
-        modified = any([
-            scanner_changed,
-            deskew_changed,
-            border_changed,
-            red_changed
-        ])
-
-        return image, modified
-
-    # ----------------------------------
-    # Get All Images Count
-    # ----------------------------------
-
-    def get_image_count(self, parent):
-
-        extensions = (
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".bmp",
-            ".tif",
-            ".tiff"
-        )
-
-        total = 0
-
-        for root, dirs, files in os.walk(parent):
-
-            dirs[:] = [
-                d for d in dirs
-                if d not in (
-                    "ProcessedImg",
-                    "ProcessedError"
-                )
-            ]
-
-            total += len([
-                f for f in files
-                if f.lower().endswith(extensions)
-            ])
-
-        return total
-
-    # ----------------------------------
-    # Main Processing
-    # ----------------------------------
-
     def process_folder(self):
 
-        source_root = self.folder_path.get()
+        folder = self.folder_path.get()
 
-        extensions = (
-            ".jpg",
-            ".jpeg",
-            ".png",
-            ".bmp",
-            ".tif",
-            ".tiff"
+        if not folder:
+            return
+
+        processed_dir = os.path.join(
+            folder,
+            "Processed"
         )
 
-        total_images = self.get_image_count(
-            source_root
+        error_dir = os.path.join(
+            folder,
+            "ProcessedError"
         )
 
-        self.progress["maximum"] = total_images
-        self.progress["value"] = 0
+        os.makedirs(
+            processed_dir,
+            exist_ok=True
+        )
 
-        processed = 0
+        os.makedirs(
+            error_dir,
+            exist_ok=True
+        )
 
-        for folder, dirs, files in os.walk(source_root):
+        files = []
 
-            dirs[:] = [
-                d for d in dirs
-                if d not in (
-                    "ProcessedImg",
-                    "ProcessedError"
-                )
-            ]
+        for root_dir, _, names in os.walk(folder):
 
-            image_files = [
-                f for f in files
-                if f.lower().endswith(extensions)
-            ]
-
-            if not image_files:
+            if root_dir.startswith(processed_dir):
                 continue
 
-            processed_folder = os.path.join(
-                folder,
-                "ProcessedImg"
-            )
+            if root_dir.startswith(error_dir):
+                continue
 
-            error_folder = os.path.join(
-                folder,
-                "ProcessedError"
-            )
+            for f in names:
 
-            os.makedirs(
-                processed_folder,
-                exist_ok=True
-            )
+                if f.lower().endswith(
+                    SUPPORTED_EXTENSIONS
+                ):
+                    files.append(
+                        os.path.join(root_dir, f)
+                    )
 
-            os.makedirs(
-                error_folder,
-                exist_ok=True
-            )
+        total = len(files)
 
-            for file in image_files:
+        processed = 0
+        fallback = 0
+        errors = 0
 
-                input_file = os.path.join(
-                    folder,
-                    file
+        self.progress["maximum"] = total
+
+        processed = 0
+        fallback = 0
+        errors = 0
+
+        log_file = os.path.join(
+            folder,
+            "ProcessingErrors.txt"
+        )
+
+        for i, file in enumerate(files, start=1):
+
+            try:
+
+                img = cv2.imread(file)
+
+                if img is None:
+
+                    shutil.copy2(
+                        file,
+                        os.path.join(
+                            error_dir,
+                            os.path.basename(file)
+                        )
+                    )
+
+                    with open(
+                        log_file,
+                        "a",
+                        encoding="utf-8"
+                    ) as f:
+
+                        f.write(
+                            f"{file} : Cannot read image\n"
+                        )
+
+                    errors += 1
+
+                    continue
+
+                result_img, status = crop_sheet(img)
+
+                output_file = os.path.join(
+                    processed_dir,
+                    os.path.basename(file)
                 )
 
-                self.current_folder.set(folder)
-                self.current_file.set(file)
+                cv2.imwrite(
+                    output_file,
+                    result_img
+                )
+
+                if status == "cropped":
+                    processed += 1
+                else:
+                    fallback += 1
+
+            except Exception as ex:
 
                 try:
 
-                    processed_image, modified = (
-                        self.process_image(
-                            input_file
-                        )
-                    )
-
-                    output_file = os.path.join(
-                        processed_folder,
-                        file
-                    )
-
-                    if modified:
-
-                        saved = cv2.imwrite(
-                            output_file,
-                            processed_image
-                        )
-
-                        print(
-                            f"File={file}"
-                        )
-
-                        print(
-                            f"Modified={modified}"
-                        )
-
-                        print(
-                            f"Saved={saved}"
-                        )
-
-                        if not saved:
-                            raise Exception(
-                                f"Unable to save {output_file}"
-                            )
-
-                    else:
-
-                        shutil.copy2(
-                            input_file,
-                            output_file
-                        )
-
-                except Exception as ex:
-
-                    print(
-                        "Error:",
-                        input_file,
-                        str(ex)
-                    )
-
                     shutil.copy2(
-                        input_file,
+                        file,
                         os.path.join(
-                            error_folder,
-                            file
+                            error_dir,
+                            os.path.basename(file)
                         )
                     )
 
-                processed += 1
+                except:
+                    pass
 
-                self.progress["value"] = processed
+                with open(
+                    log_file,
+                    "a",
+                    encoding="utf-8"
+                ) as f:
 
-                self.lbl_progress.config(
-                    text=f"{processed} / {total_images}"
-                )
+                    f.write(
+                        f"{file} : {str(ex)}\n"
+                    )
 
-                self.root.update_idletasks()
+                errors += 1
 
-        self.current_folder.set(
-            "Completed"
-        )
+            self.progress["value"] = i
 
-        self.current_file.set(
-            f"Successfully processed {processed} images"
-        )
+            self.status.config(
+                text=f"Processing {i}/{total}"
+            )
+
+            self.root.update_idletasks()
 
         messagebox.showinfo(
             "Completed",
-            f"Successfully processed {processed} images."
+            f"Processed : {processed}\n"
+            f"Fallback : {fallback}\n"
+            f"Errors : {errors}"
         )
 
 
-# -----------------------------------------------------
-# Application Start
-# -----------------------------------------------------
-
 if __name__ == "__main__":
 
-    root = tk.Tk()
+    root = Tk()
 
-    app = CropCleanApp(root)
+    CropApplication(root)
 
     root.mainloop()

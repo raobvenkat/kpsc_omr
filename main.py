@@ -16,6 +16,9 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from typing import Callable, Optional
 from AllDiscrepancyGeneration import AllDiscrepancyGeneration
+import tempfile
+import subprocess
+import shutil
 
 try:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -31,9 +34,11 @@ import audit
 
 
 APP_TITLE = "KPSC Counter Foil & Nominal Roll Data extraction Suite"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.003"
 
-
+def is_running_as_exe():
+    return getattr(sys, "frozen", False) and os.path.isfile(sys.executable)
+    
 class ResponsiveScaler:
     """Scale fonts and spacing from screen size and current window size."""
 
@@ -897,7 +902,7 @@ class MainApplication:
             panel_body,
             "DATA EXTRACTION",
             "extraction_type_var",
-            ["OMR Ink Detection", "Counter Foil Scanning", "Nominal Rolls Scanning"],
+            ["Crop & Clean the images","OMR Ink Detection", "Counter Foil Scanning", "Nominal Rolls Scanning"],
             self._on_extraction_type_selected,
         )
 
@@ -1063,7 +1068,9 @@ class MainApplication:
             return
         # Reset to placeholder after opening
         self.root.after(100, lambda: self.extraction_type_var.set("Select..."))
-        if "OMR Ink Detection" in selection:
+        if "Crop & Clean" in selection:
+            self.open_Crop_Clean_Images()
+        elif "OMR Ink Detection" in selection:
             self.open_omr_ink_detection()
         elif "Counter Foil" in selection:
             self.open_omr_module()
@@ -1227,58 +1234,368 @@ class MainApplication:
                 )
                 return False
 
+    def execute_update_batch(self, source_exe):
+
+        destination_exe = sys.executable
+
+        destination_folder = os.path.dirname(destination_exe)
+
+        backup_exe = destination_exe + ".bak"
+
+        batch_file = os.path.join(
+            tempfile.gettempdir(),
+            "KPSC_AUTO_UPDATE.bat"
+        )
+
+        batch_content = rf"""
+    @echo off
+
+    echo ====================================
+    echo KPSC AUTO UPDATE
+    echo ====================================
+
+    timeout /t 5 /nobreak >nul
+
+    echo Creating backup...
+
+    if exist "{backup_exe}" del /f /q "{backup_exe}"
+
+    copy /y "{destination_exe}" "{backup_exe}"
+
+    if errorlevel 1 (
+        echo Backup failed.
+        goto rollback
+    )
+
+    echo Replacing executable...
+
+    copy /y "{source_exe}" "{destination_exe}"
+
+    if errorlevel 1 (
+        echo Copy failed.
+        goto rollback
+    )
+
+    echo Verifying executable...
+
+    if not exist "{destination_exe}" (
+        echo New executable missing.
+        goto rollback
+    )
+
+    echo Restarting application...
+
+    start "" "{destination_exe}"
+
+    timeout /t 2 /nobreak >nul
+
+    del /f /q "{backup_exe}"
+
+    goto end
+
+    :rollback
+
+    echo ====================================
+    echo ROLLBACK STARTED
+    echo ====================================
+
+    if exist "{backup_exe}" (
+        copy /y "{backup_exe}" "{destination_exe}"
+    )
+
+    start "" "{destination_exe}"
+
+    :end
+
+    timeout /t 2 /nobreak >nul
+
+    del "%~f0"
+    """
+
+        with open(batch_file, "w", encoding="utf-8") as bat:
+            bat.write(batch_content)
+
+        subprocess.Popen(
+            ["cmd", "/c", batch_file],
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+
+        self.root.destroy()
+
+        os._exit(0)
+
+    def check_application_version(self):
+        """
+        Check application version against Parameters table.
+
+        Parameters Table:
+            MajorCode = 'EXE'
+            MinorCode = 'VERSION'
+                -> DefaultValue = required version
+
+            MajorCode = 'EXE'
+            MinorCode = 'PATH'
+                -> DefaultValue = source exe full path
+
+        Returns:
+            True  -> Continue application startup
+            False -> Stop startup/reset application
+        """
+
+        # Skip version validation when running source code
+        # Execute version checking only for packaged EXE
+        if not getattr(sys, "frozen", False):
+            return True
+
+        conn = None
+
+        try:
+
+            conn = db_credentials.get_sql_connection()
+            cursor = conn.cursor()
+
+            # --------------------------------------------------
+            # Ensure Parameter Table Exists & Get Required Version
+            # --------------------------------------------------
+            #cursor.execute("""
+            #    IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'Parameters')
+            #    BEGIN
+            #       CREATE TABLE dbo.Parameters (
+            #            ID INT IDENTITY(1,1) PRIMARY KEY,
+            #           MajorCode VARCHAR(50) NOT NULL,
+            #            MinorCode VARCHAR(50) NOT NULL,
+            #            DefaultValue VARCHAR(255) NULL
+            #        );
+            #    END
+            #""")
+            #conn.commit()
+
+            cursor.execute("""
+                SELECT DefaultValue
+                FROM Parameters
+                WHERE MajorCode = ?
+                AND MinorCode = ?
+            """, ("EXE", "VERSION"))
+
+            row = cursor.fetchone()
+
+            if row is None:
+                cursor.execute("""
+                    INSERT INTO dbo.Parameters (MajorCode, MinorCode, DefaultValue)
+                    VALUES ('EXE', 'VERSION', ?)
+                """, (APP_VERSION,))
+                conn.commit()
+                db_version = APP_VERSION
+            else:
+                db_version = str(row[0]).strip()
+
+            # --------------------------------------------------
+            # Version Match
+            # --------------------------------------------------
+
+            if db_version == APP_VERSION:
+                return True
+
+            # --------------------------------------------------
+            # Get Update EXE Path
+            # --------------------------------------------------
+
+            cursor.execute("""
+                SELECT DefaultValue
+                FROM Parameters
+                WHERE MajorCode = ?
+                AND MinorCode = ?
+            """, ("EXE", "PATH"))
+
+            row = cursor.fetchone()
+
+            if row is None:
+
+                messagebox.showerror(
+                    "Update Configuration Error",
+                    "Update path not found in Parameters table.\n\n"
+                    "MajorCode='EXE' MinorCode='PATH'"
+                )
+
+                return False
+
+            source_exe = str(row[0]).strip()
+
+            if not source_exe:
+
+                messagebox.showerror(
+                    "Update Configuration Error",
+                    "Source EXE path is blank in Parameters table."
+                )
+
+                return False
+
+            if not os.path.exists(source_exe):
+
+                messagebox.showerror(
+                    "Update File Not Found",
+                    f"Source EXE not found:\n\n{source_exe}"
+                )
+
+                return False
+
+            # --------------------------------------------------
+            # Notify User
+            # --------------------------------------------------
+
+            messagebox.showinfo(
+                "Application Update",
+                f"A newer application version is available.\n\n"
+                f"Current Version : {APP_VERSION}\n"
+                f"Required Version: {db_version}\n\n"
+                f"The application will now update and restart."
+            )
+
+            # --------------------------------------------------
+            # Create Batch And Update
+            # --------------------------------------------------
+
+            self.execute_update_batch(source_exe)
+
+            return False
+
+        except Exception as ex:
+
+            messagebox.showerror(
+                "Version Check Failed",
+                str(ex)
+            )
+
+            return False
+
+        finally:
+
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+
+
     def _startup_flow(self) -> None:
+
         self.root.deiconify()
         self.root.lift()
+
+        #
+        # Step 1 : Validate Database Connection
+        #
         if not self._ensure_database_setup():
+            self.root.destroy()
             return
 
+        #
+        # Step 2 : EXE Version Validation
+        # (Automatically skipped when running from source)
+        #
+        if not self.check_application_version():
+            return
+
+        #
+        # Step 3 : Initialize Authentication Tables
+        #
         while True:
+
             try:
                 auth.initialize_auth_schema()
                 audit.initialize_schema()
                 break
+
             except Exception as exc:
+
                 messagebox.showwarning(
                     "Database Connection Required",
-                    "Authentication setup could not reach the database. "
-                    "Please verify the connection again.\n\n"
+                    "Authentication setup could not reach the database.\n\n"
                     f"{exc}",
                 )
+
                 if not self._ensure_database_setup():
+                    self.root.destroy()
                     return
 
+        #
+        # Step 4 : First Time Admin Creation
+        #
         if not auth.admin_exists():
-            dialog = AdminSetupDialog(self.root, self.scaler)
+
+            dialog = AdminSetupDialog(
+                self.root,
+                self.scaler
+            )
+
             self.root.wait_window(dialog)
+
             if not dialog.result:
+
                 messagebox.showwarning(
                     "Admin Required",
-                    "Create an administrator account before using the application.",
+                    "Create an administrator account before using the application."
                 )
+
+                self.root.destroy()
                 return
+
             try:
+
                 data = dialog.result
+
                 data["role"] = "admin"
                 data["is_active"] = True
+
                 auth.create_user(**data)
+
             except Exception as exc:
-                messagebox.showerror("Admin Setup Failed", str(exc))
+
+                messagebox.showerror(
+                    "Admin Setup Failed",
+                    str(exc)
+                )
+
+                self.root.destroy()
                 return
 
-            admin_user = auth.authenticate(data["username"], data["password"])
+            admin_user = auth.authenticate(
+                data["username"],
+                data["password"]
+            )
+
             if admin_user is None:
-                messagebox.showerror("Login Failed", "Admin was created, but login failed.")
+
+                messagebox.showerror(
+                    "Login Failed",
+                    "Administrator account created successfully, "
+                    "but automatic login failed."
+                )
+
+                self.root.destroy()
                 return
+
             self._set_current_user(admin_user)
+
             self.root.deiconify()
+
             self._open_user_master()
+
             return
 
+        #
+        # Step 5 : User Login
+        #
         if self._show_login():
+
             self.root.deiconify()
+            self.root.lift()
+            self.root.focus_force()
+
         else:
+
             self.root.destroy()
+
 
     def _show_login(self) -> bool:
         while True:
@@ -1573,7 +1890,15 @@ class MainApplication:
             "OMR Ink Detection",
             user_id,
         )
+    def open_Crop_Clean_Images(self) -> None:
+        self._open_module_from_import(
+            "CropAndCleanImages",
+            "CropCleanApp",
+            "Crop & Clean Images",
+        )
 
+    open_Crop_Clean_images = open_Crop_Clean_Images
+    open_Crop_Clean_image = open_Crop_Clean_Images
     def CounterFoilDataEdit(self) -> None:
         user_id = self.current_user.user_id if self.current_user is not None else 1
         self._open_module_from_import(

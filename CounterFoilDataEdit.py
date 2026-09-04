@@ -10,6 +10,22 @@ class CounterFoilDataEdit:
     # Horizontal offset (pixels) for the status label inside the image panel
     STATUS_LABEL_LEFT_OFFSET = 110
 
+    COLUMN_WIDTHS = {
+        'SlNo': 50,
+        'SheetNo': 70,
+        'FileName': 150,
+        'Barcode': 95,
+        'BubbleRegNo': 95,
+        'WrittenRegNo': 95,
+        'SubjectCode': 80,
+        'BookletSlNo': 85,
+        'CandSig': 60,
+        'InvSig': 60,
+        'Whitener': 60,
+        'NonStandard': 80,
+        'Threshold': 70
+    }
+
     def __init__(self, root, user_id):
         self.root = root
         self.user_id = user_id
@@ -39,6 +55,15 @@ class CounterFoilDataEdit:
         self.goto_row_var = tk.StringVar()
         self.edit_entry_widgets = {}
         self.current_focus_field = None
+        sh = self.root.winfo_screenheight()
+        is_small = sh <= 800
+        self.grid_height = 4 if is_small else 5
+        self.font_title = ('Segoe UI', 13 if is_small else 16, 'bold')
+        self.font_lbl = ('Segoe UI', 10 if is_small else 12)
+        self.font_entry = ('Segoe UI', 10 if is_small else 12)
+        self.pady_field = 1 if is_small else 3
+        self.left_width = 600 if is_small else 640
+        self.crop_height = 70 if is_small else 90
 
         self.create_controls()
         self.load_editfor_values()
@@ -49,20 +74,39 @@ class CounterFoilDataEdit:
         lbl_header = tk.Label(
             self.root,
             text='Counter Foil Data Edit',
-            font=('Segoe UI', 16, 'bold'),
+            font=self.font_title,
             bg='#0D47A1',
             fg='white',
             padx=10,
-            pady=8
+            pady=4
         )
-        lbl_header.pack(fill='x', pady=5)
+        lbl_header.pack(fill='x', pady=(2, 4))
 
         body = tk.Frame(self.root)
         body.pack(fill='both', expand=True)
 
-        left_frame = tk.Frame(body, width=650)
-        left_frame.pack(side='left', fill='both', expand=False)
-        left_frame.pack_propagate(False)
+        left_container = tk.Frame(body, width=self.left_width)
+        left_container.pack(side='left', fill='both', expand=False, padx=(0, 5))
+        left_container.pack_propagate(False)
+
+        left_canvas = tk.Canvas(left_container, bd=0, highlightthickness=0)
+        left_scrollbar = ttk.Scrollbar(left_container, orient='vertical', command=left_canvas.yview)
+
+        left_frame = tk.Frame(left_canvas)
+        left_frame.bind(
+            '<Configure>',
+            lambda e: left_canvas.configure(scrollregion=left_canvas.bbox('all'))
+        )
+        left_canvas.create_window((0, 0), window=left_frame, anchor='nw', width=self.left_width - 25)
+        left_canvas.configure(yscrollcommand=left_scrollbar.set)
+
+        left_canvas.pack(side='left', fill='both', expand=True)
+        left_scrollbar.pack(side='right', fill='y')
+
+        def _on_mousewheel(event):
+            left_canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        left_canvas.bind('<Enter>', lambda e: left_canvas.bind_all('<MouseWheel>', _on_mousewheel))
+        left_canvas.bind('<Leave>', lambda e: left_canvas.unbind_all('<MouseWheel>'))
 
         right_frame = tk.LabelFrame(body, text='Full Image')
         right_frame.pack(side='right', fill='both', expand=True, padx=5, pady=0)
@@ -75,55 +119,41 @@ class CounterFoilDataEdit:
 
     def create_filter_panel(self, parent):
         frame = ttk.LabelFrame(parent, text='Filter')
-        frame.pack(fill='x', padx=5, pady=5)
-        frame.configure(width=620)
+        frame.pack(fill='x', padx=5, pady=2)
 
-        ttk.Label(frame, text='Edit For').grid(row=0, column=0, padx=3, pady=5)
-        self.cbo_editfor = ttk.Combobox(frame, textvariable=self.edit_for_var, state='readonly', width=24)
-        self.cbo_editfor.grid(row=0, column=1, padx=3)
+        ttk.Label(frame, text='Edit For', font=self.font_lbl).grid(row=0, column=0, padx=(4, 2), pady=2, sticky='w')
+        self.cbo_editfor = ttk.Combobox(frame, textvariable=self.edit_for_var, state='readonly', width=15, font=self.font_entry)
+        self.cbo_editfor.grid(row=0, column=1, padx=2, sticky='w')
 
-        ttk.Label(frame, text='From Sheet No').grid(row=0, column=2, padx=3)
-        self.txt_fromsheet = ttk.Entry(frame, textvariable=self.from_sheet_var, width=8)
-        self.txt_fromsheet.grid(row=0, column=3, padx=3)
+        ttk.Label(frame, text='From', font=self.font_lbl).grid(row=0, column=2, padx=(6, 2), sticky='w')
+        self.txt_fromsheet = ttk.Entry(frame, textvariable=self.from_sheet_var, width=6, font=self.font_entry)
+        self.txt_fromsheet.grid(row=0, column=3, padx=2, sticky='w')
 
-        ttk.Label(frame, text='To Sheet No').grid(row=0, column=4, padx=3)
-        self.txt_tosheet = ttk.Entry(frame, textvariable=self.to_sheet_var, width=8)
-        self.txt_tosheet.grid(row=0, column=5, padx=3)
+        ttk.Label(frame, text='To', font=self.font_lbl).grid(row=0, column=4, padx=(6, 2), sticky='w')
+        self.txt_tosheet = ttk.Entry(frame, textvariable=self.to_sheet_var, width=6, font=self.font_entry)
+        self.txt_tosheet.grid(row=0, column=5, padx=2, sticky='w')
 
-        ttk.Button(frame, text='Load Data', command=self.load_data).grid(row=0, column=6, padx=3)
+        ttk.Button(frame, text='Load Data', command=self.load_data).grid(row=0, column=6, padx=(8, 4), sticky='w')
 
-        ttk.Label(frame, text='SheetNo').grid(row=1, column=0, padx=3, pady=5)
-        self.txt_sheetno = ttk.Entry(frame, textvariable=self.sheetno_var, width=8)
-        self.txt_sheetno.grid(row=1, column=1, padx=3)
+        ttk.Label(frame, text='SheetNo', font=self.font_lbl).grid(row=1, column=0, padx=(4, 2), pady=2, sticky='w')
+        self.txt_sheetno = ttk.Entry(frame, textvariable=self.sheetno_var, width=15, font=self.font_entry)
+        self.txt_sheetno.grid(row=1, column=1, padx=2, sticky='w')
 
-        ttk.Label(frame, text='File Name').grid(row=1, column=2, padx=3)
-        self.txt_filename = ttk.Entry(frame, textvariable=self.filename_var, width=24)
-        self.txt_filename.grid(row=1, column=3, columnspan=2, padx=3)
+        ttk.Label(frame, text='File Name', font=self.font_lbl).grid(row=1, column=2, padx=(6, 2), sticky='w')
+        self.txt_filename = ttk.Entry(frame, textvariable=self.filename_var, width=16, font=self.font_entry)
+        self.txt_filename.grid(row=1, column=3, columnspan=3, padx=2, sticky='w')
 
-        ttk.Button(frame, text='Filter', command=self.filter_grid).grid(row=1, column=6, padx=3)
+        ttk.Button(frame, text='Filter', command=self.filter_grid).grid(row=1, column=6, padx=(8, 4), sticky='w')
 
     def create_grid_panel(self, parent):
+        frame = tk.LabelFrame(parent, text="Data Grid")
+        frame.pack(fill="x", padx=5, pady=2)
 
-        frame = tk.LabelFrame(
-            parent,
-            text="Data Grid"
-        )
+        tree_frame = tk.Frame(frame)
+        tree_frame.pack(fill="both", expand=True, padx=4, pady=2)
 
-        frame.pack(
-            fill="x",
-            padx=5,
-            pady=5
-        )
-
-        frame.grid_rowconfigure(
-            0,
-            weight=1
-        )
-
-        frame.grid_columnconfigure(
-            0,
-            weight=1
-        )
+        tree_frame.grid_rowconfigure(0, weight=1)
+        tree_frame.grid_columnconfigure(0, weight=1)
 
         cols = (
             'SlNo',
@@ -142,167 +172,76 @@ class CounterFoilDataEdit:
         )
 
         self.grid = ttk.Treeview(
-            frame,
+            tree_frame,
             columns=cols,
             show='headings',
-            height=8
+            height=self.grid_height
         )
 
         for c in cols:
+            self.grid.heading(c, text=c)
+            w = self.COLUMN_WIDTHS.get(c, 90)
+            self.grid.column(c, width=w, minwidth=min(w, 50), stretch=False, anchor='center')
 
-            self.grid.heading(
-                c,
-                text=c
-            )
-
-            self.grid.column(
-                c,
-                width=140,
-                minwidth=100,
-                stretch=False,
-                anchor='center'
-            )
-
-        self.grid.grid(
-            row=0,
-            column=0,
-            sticky='nsew'
-        )
+        self.grid.grid(row=0, column=0, sticky='nsew')
 
         # Vertical Scroll Bar
-
         vs = ttk.Scrollbar(
-            frame,
+            tree_frame,
             orient='vertical',
             command=self.grid.yview
         )
-
-        vs.grid(
-            row=0,
-            column=1,
-            sticky='ns'
-        )
+        vs.grid(row=0, column=1, sticky='ns')
 
         # Horizontal Scroll Bar
-
         hs = ttk.Scrollbar(
-            frame,
+            tree_frame,
             orient='horizontal',
             command=self.grid.xview
         )
-
-        hs.grid(
-            row=1,
-            column=0,
-            sticky='ew'
-        )
+        hs.grid(row=1, column=0, sticky='ew')
 
         self.grid.configure(
             yscrollcommand=vs.set,
             xscrollcommand=hs.set
         )
 
-        self.grid.bind(
-            "<<TreeviewSelect>>",
-            self.grid_row_selected
-        )
+        self.grid.bind("<<TreeviewSelect>>", self.grid_row_selected)
 
         # Navigation
-
         nav = tk.Frame(frame)
+        nav.pack(fill="x", padx=4, pady=(2, 4))
 
-        nav.grid(
-            row=2,
-            column=0,
-            sticky="ew",
-            pady=5
-        )
+        ttk.Button(nav, text="First", command=self.first_page).pack(side="left", padx=1)
+        ttk.Button(nav, text="Previous", command=self.previous_page).pack(side="left", padx=1)
+        ttk.Button(nav, text="Next", command=self.next_page).pack(side="left", padx=1)
+        ttk.Button(nav, text="Last", command=self.last_page).pack(side="left", padx=1)
 
-        ttk.Button(
-            nav,
-            text="First",
-            command=self.first_page
-        ).pack(side="left")
-
-        ttk.Button(
-            nav,
-            text="Previous",
-            command=self.previous_page
-        ).pack(side="left")
-
-        ttk.Button(
-            nav,
-            text="Next",
-            command=self.next_page
-        ).pack(side="left")
-
-        ttk.Button(
-            nav,
-            text="Last",
-            command=self.last_page
-        ).pack(side="left")
-
-        ttk.Label(
-            nav,
-            text="Go To Row"
-        ).pack(
-            side="left",
-            padx=(20,5)
-        )
-
-        self.txt_goto = ttk.Entry(
-            nav,
-            textvariable=self.goto_row_var,
-            width=10
-        )
-
-        self.txt_goto.pack(
-            side="left"
-        )
-
-        self.btn_goto = ttk.Button(
-            nav,
-            text="Go"
-        )
-
-        self.btn_goto.pack(
-            side="left",
-            padx=5
-        )
+        ttk.Label(nav, text="Go To Row", font=self.font_lbl).pack(side="left", padx=(12, 4))
+        self.txt_goto = ttk.Entry(nav, textvariable=self.goto_row_var, width=8, font=self.font_entry)
+        self.txt_goto.pack(side="left")
+        self.btn_goto = ttk.Button(nav, text="Go")
+        self.btn_goto.pack(side="left", padx=4)
 
     def create_edit_panel(self, parent):
         frame = ttk.LabelFrame(parent, text='Edit')
-        frame.pack(fill='x', padx=5, pady=5)
+        frame.pack(fill='x', padx=5, pady=2)
 
-        frame.grid_columnconfigure(0, weight=1)
-        frame.grid_columnconfigure(1, weight=1)
-
-        left_frame = ttk.Frame(frame)
-        left_frame.grid(row=1, column=0, sticky='nsew', padx=(5, 10), pady=5)
-
-        # Move ID label into the left frame so it stays with the left-side controls
-        self.lbl_id = ttk.Label(left_frame, text='ID :', font=('Segoe UI', 14))
-        self.lbl_id.grid(row=0, column=0, sticky='w', padx=5, pady=5, columnspan=2)
-
-        # Left frame now holds the ID label at row 0; fields start at row 1
-        
-        right_frame = ttk.Frame(frame)
-        right_frame.grid(row=1, column=1, sticky='nsew', padx=(10, 5), pady=5)
-
-        self.crop_frame = ttk.LabelFrame(right_frame, text='Focus Crop')
-        self.crop_frame.grid(row=0, column=0, columnspan=2, sticky='ew', padx=5, pady=(0, 2))
+        # Top Section: Focus Crop Box
+        self.crop_frame = ttk.LabelFrame(frame, text='Focus Crop')
+        self.crop_frame.pack(fill='x', padx=5, pady=(2, 4))
 
         crop_toolbar = tk.Frame(self.crop_frame)
-        crop_toolbar.pack(fill='x', padx=4, pady=(4, 0))
+        crop_toolbar.pack(fill='x', padx=4, pady=(2, 0))
         ttk.Button(crop_toolbar, text='+', width=3, command=self.crop_zoom_in).pack(side='left', padx=(0, 2))
         ttk.Button(crop_toolbar, text='-', width=3, command=self.crop_zoom_out).pack(side='left')
 
         crop_container = tk.Frame(self.crop_frame)
-        crop_container.pack(fill='both', expand=True, padx=4, pady=4)
+        crop_container.pack(fill='both', expand=True, padx=4, pady=2)
         crop_container.grid_rowconfigure(0, weight=1)
         crop_container.grid_columnconfigure(0, weight=1)
 
-        self.crop_canvas = tk.Canvas(crop_container, width=140, height=90, bg='white', highlightthickness=1)
+        self.crop_canvas = tk.Canvas(crop_container, width=140, height=self.crop_height, bg='white', highlightthickness=1)
         self.crop_canvas.grid(row=0, column=0, sticky='nsew')
 
         crop_hscroll = ttk.Scrollbar(crop_container, orient='horizontal', command=self.crop_canvas.xview)
@@ -312,7 +251,14 @@ class CounterFoilDataEdit:
         self.crop_canvas.configure(xscrollcommand=crop_hscroll.set, yscrollcommand=crop_vscroll.set)
         self.crop_canvas.bind('<MouseWheel>', self.crop_mouse_zoom)
 
-        fields = [
+        # Bottom Section: Form Fields organized in 2 side-by-side column pairs
+        fields_frame = ttk.Frame(frame)
+        fields_frame.pack(fill='x', padx=5, pady=2)
+
+        self.lbl_id = ttk.Label(fields_frame, text='ID :', font=self.font_lbl)
+        self.lbl_id.grid(row=0, column=0, sticky='w', padx=3, pady=self.pady_field, columnspan=4)
+
+        text_fields = [
             ('Subject Code', 'subject_code_var'),
             ('Booklet Sl No', 'booklet_var'),
             ('Barcode', 'barcode_var'),
@@ -320,82 +266,36 @@ class CounterFoilDataEdit:
             ('Handwritten RegNo', 'hand_var')
         ]
 
+        flag_fields = [
+            ('Cand Signature', 'candsig'),
+            ('Inv Signature', 'invsig'),
+            ('Whitener Applied', 'whitener'),
+            ('Threshold < 35%', 'threshold'),
+            ('Non Std Sheet', 'nonstd')
+        ]
+
         self.editor_vars = {}
-        for r, (lbl, varname) in enumerate(fields, start=1):
-            ttk.Label(left_frame, text=lbl, font=('Segoe UI', 14)).grid(row=r, column=0, sticky='w', padx=5, pady=4)
-            v = tk.StringVar()
-            self.editor_vars[varname] = v
-            entry = ttk.Entry(left_frame, textvariable=v, width=18, font=('Segoe UI', 13))
-            entry.grid(row=r, column=1, padx=5, pady=4)
-            entry.bind('<FocusIn>', lambda event, field=varname: self.on_focus_crop(field))
-            self.edit_entry_widgets[varname] = entry
-
         yn = ['Yes', 'No']
-        right_frame.grid_columnconfigure(0, weight=1)
-        right_frame.grid_columnconfigure(1, weight=1)
-        
-        for r, (lbl, varname) in enumerate([
-            ('Candidate Signature', 'candsig'),
-            ('Invigilator Signature', 'invsig'),
-            ('Whitener Applied', 'whitener')
-        ], start=0):
 
-            ttk.Label(right_frame, text=lbl, font=('Segoe UI', 14)).grid(row=r+1, column=0, sticky='w', padx=5, pady=4)
-            v = tk.StringVar()
-            self.editor_vars[varname] = v
-            combo = ttk.Combobox(right_frame, textvariable=v, values=yn, state='readonly', width=5, font=('Segoe UI', 13))
-            combo.grid(row=r+1, column=1, padx=5, pady=4)
-            combo.bind('<FocusIn>', lambda event, field=varname: self.on_focus_crop(field))
+        for r in range(5):
+            # Left side: text fields (col 0: Label, col 1: Entry)
+            lbl_txt, var_txt = text_fields[r]
+            ttk.Label(fields_frame, text=lbl_txt, font=self.font_lbl).grid(row=r+1, column=0, sticky='w', padx=(2, 4), pady=self.pady_field)
+            v1 = tk.StringVar()
+            self.editor_vars[var_txt] = v1
+            entry = ttk.Entry(fields_frame, textvariable=v1, width=14, font=self.font_entry)
+            entry.grid(row=r+1, column=1, padx=(0, 10), pady=self.pady_field, sticky='w')
+            entry.bind('<FocusIn>', lambda event, field=var_txt: self.on_focus_crop(field))
+            self.edit_entry_widgets[var_txt] = entry
 
-        # Move Threshold dropdown to the left frame below the handwritten field
-        try:
-            thr_row = len(fields) + 1
-        except Exception:
-            thr_row = 6
-        ttk.Label(left_frame, text='Threshold < 35%', font=('Segoe UI', 14)).grid(row=thr_row, column=0, sticky='w', padx=5, pady=4)
-        v = tk.StringVar()
-        self.editor_vars['threshold'] = v
-        thr_combo = ttk.Combobox(left_frame, textvariable=v, values=yn, state='readonly', width=5, font=('Segoe UI', 13))
-        thr_combo.grid(row=thr_row, column=1, padx=5, pady=4)
-        thr_combo.bind('<FocusIn>', lambda event, field='threshold': self.on_focus_crop(field))
-        nonstd_row = thr_row + 1
-
-        ttk.Label(
-            left_frame,
-            text='Non Standard Sheet',
-            font=('Segoe UI', 14)
-        ).grid(
-            row=nonstd_row,
-            column=0,
-            sticky='w',
-            padx=5,
-            pady=4
-        )
-
-        v = tk.StringVar()
-        self.editor_vars['nonstd'] = v
-
-        nonstd_combo = ttk.Combobox(
-            left_frame,
-            textvariable=v,
-            values=['Yes', 'No'],
-            state='readonly',
-            width=5,
-            font=('Segoe UI', 13)
-        )
-
-        nonstd_combo.grid(
-            row=nonstd_row,
-            column=1,
-            padx=5,
-            pady=4
-        )
-
-        nonstd_combo.bind(
-            '<FocusIn>',
-            lambda event, field='nonstd':
-            self.on_focus_crop(field)
-        )
+            # Right side: dropdown flags (col 2: Label, col 3: Combobox)
+            lbl_flg, var_flg = flag_fields[r]
+            ttk.Label(fields_frame, text=lbl_flg, font=self.font_lbl).grid(row=r+1, column=2, sticky='w', padx=(10, 4), pady=self.pady_field)
+            v2 = tk.StringVar()
+            self.editor_vars[var_flg] = v2
+            combo = ttk.Combobox(fields_frame, textvariable=v2, values=yn, state='readonly', width=5, font=self.font_entry)
+            combo.grid(row=r+1, column=3, padx=(0, 2), pady=self.pady_field, sticky='w')
+            combo.bind('<FocusIn>', lambda event, field=var_flg: self.on_focus_crop(field))
 
     def on_focus_crop(self, field_name):
         self.current_focus_field = field_name
@@ -443,7 +343,7 @@ class CounterFoilDataEdit:
                 x1 = int(w * 0.55)
                 x2 = w
                 y1 = int(h * 0.30)
-                y2 = int(h * 0.64)
+                y2 = int(h * 0.70)
 
             elif field_name == 'hand_var':
                 # Crop for handwritten Register No (matches orange rectangle in 123.png)
@@ -550,8 +450,8 @@ class CounterFoilDataEdit:
             status_container,
             textvariable=self.message_var,
             anchor='w',
-            font=('Segoe UI', 14),
-            wraplength=600,
+            font=self.font_lbl,
+            wraplength=500,
             justify='left'
         )
         left_pad = self.STATUS_LABEL_LEFT_OFFSET
@@ -602,7 +502,8 @@ class CounterFoilDataEdit:
 
         for col in self.columns:
             self.grid.heading(col, text=col)
-            self.grid.column(col, width=140, minwidth=100, stretch=False, anchor='center')
+            w = self.COLUMN_WIDTHS.get(col, 90)
+            self.grid.column(col, width=w, minwidth=min(w, 50), stretch=False, anchor='center')
 
         start = (self.current_page - 1) * self.PAGE_SIZE
         end = start + self.PAGE_SIZE

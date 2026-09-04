@@ -1,10 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 from PyInstaller.utils.hooks import collect_dynamic_libs
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('core\\mnist-8.onnx', 'core'), ('sql', 'sql'), ('KPSC_DB_Script_14072026.sql', '.'), ('OMR', 'OMR'), ('OMR_1', 'OMR_1'), ('OMRs2', 'OMRs2'), ('Attendance Sheet1', 'Attendance Sheet1'), ('Attendance Sheet2', 'Attendance Sheet2')]
+raw_datas = [('core\\mnist-8.onnx', 'core'), ('sql', 'sql'), ('KPSC_DB_Script_14072026.sql', '.'), ('OMR', 'OMR'), ('OMR_1', 'OMR_1'), ('OMRs2', 'OMRs2'), ('Attendance Sheet1', 'Attendance Sheet1'), ('Attendance Sheet2', 'Attendance Sheet2')]
+datas = [(src, dst) for src, dst in raw_datas if os.path.exists(src)]
 binaries = []
-hiddenimports = ['CounterFoilScanning', 'CounterFoilSubBSNoEdit', 'CounterFoilDataEdit', 'NominalRolls', 'NominalRoll1DataEdit', 'NominalRoll2DataEdit', 'OMRInkDetection', 'DiscrepancyReports', 'AllDiscrepancyGeneration', 'CopyDiscrepancySheets', 'core.omr', 'core.omr_bw', 'core.omr_color', 'core.nominal_roll', 'core.nominal_roll_type1', 'core.nominal_roll_type2']
+hiddenimports = ['CropAndCleanImages', 'CounterFoilScanning', 'CounterFoilSubBSNoEdit', 'CounterFoilDataEdit', 'NominalRolls', 'NominalRoll1DataEdit', 'NominalRoll2DataEdit', 'OMRInkDetection', 'DiscrepancyReports', 'AllDiscrepancyGeneration', 'CopyDiscrepancySheets', 'ViewCounterFoilNominalRoll', 'ImportMasterData', 'DownloadCounterFoilsNominalRolls', 'UserGroupMaster', 'UserGroupPermissions', 'ChangePassword', 'ResetPassword', 'core.omr', 'core.omr_bw', 'core.omr_color', 'core.nominal_roll', 'core.nominal_roll_type1', 'core.nominal_roll_type2']
 binaries += collect_dynamic_libs('onnxruntime')
 binaries += collect_dynamic_libs('pyzbar')
 tmp_ret = collect_all('easyocr')
@@ -46,6 +48,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version='file_version_info.txt',
 )
 coll = COLLECT(
     exe,

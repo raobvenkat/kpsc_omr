@@ -14,22 +14,39 @@ import db_credentials
 
 class ScrollableImageViewer(tk.Frame):
 
-    def __init__(self, parent):
+    def __init__(self, parent, show_record_details=False):
 
         super().__init__(parent)
+        self.configure(width=400, height=400)
+        self.pack_propagate(False)
 
         self.image_path = None
         self.original_image = None
         self.photo = None
         self.zoom = 100
+        self.status_var = tk.StringVar(value="No image loaded")
+        self.record_details_var = tk.StringVar()
 
         self.toolbar = tk.Frame(self)
         self.toolbar.pack(fill="x")
+
+        if show_record_details:
+            tk.Label(
+                self.toolbar,
+                textvariable=self.record_details_var,
+                anchor="w"
+            ).pack(side="left", padx=5)
 
         tk.Label(
             self.toolbar,
             text="Zoom %"
         ).pack(side="left", padx=5)
+
+        tk.Label(
+            self.toolbar,
+            textvariable=self.status_var,
+            anchor="w"
+        ).pack(side="left", fill="x", expand=True, padx=5)
 
         self.zoom_var = tk.StringVar()
         self.zoom_combo = ttk.Combobox(
@@ -95,20 +112,71 @@ class ScrollableImageViewer(tk.Frame):
             fill="x"
         )
 
+    def set_record_details(self, reg_no, subject_code):
+
+        self.record_details_var.set(
+            f"RegNo: {reg_no} / SubjectCode: {subject_code}"
+        )
+
     def load_image(self, image_path):
 
         self.canvas.delete("all")
+        self.original_image = None
+        self.photo = None
+        self.image_path = None
 
         if not image_path:
+            self.status_var.set("No image path returned")
+            messagebox.showerror(
+                "Image Load Error",
+                "The database did not return an image path.",
+                parent=self.winfo_toplevel()
+            )
             return
 
-        self.image_path = image_path
+        if isinstance(image_path, bytes):
+            image_path = image_path.decode("utf-8", errors="replace")
 
-        self.original_image = Image.open(
-            image_path
+        image_path = os.path.normpath(
+            str(image_path).strip().strip('"')
         )
 
-        self.display_image()
+        if not os.path.isfile(image_path):
+            error_text = f"Image file not found:\n{image_path}"
+            self.status_var.set(error_text)
+            self.canvas.create_text(
+                20,
+                20,
+                text=error_text,
+                anchor="nw"
+            )
+            messagebox.showerror(
+                "Image Load Error",
+                error_text,
+                parent=self.winfo_toplevel()
+            )
+            return
+
+        try:
+            with Image.open(image_path) as image:
+                self.original_image = image.convert("RGB")
+            self.image_path = image_path
+            self.status_var.set(os.path.basename(image_path))
+            self.display_image()
+        except Exception as exc:
+            error_text = f"Unable to load image:\n{exc}"
+            self.status_var.set(error_text)
+            self.canvas.create_text(
+                20,
+                20,
+                text=error_text,
+                anchor="nw"
+            )
+            messagebox.showerror(
+                "Image Load Error",
+                error_text,
+                parent=self.winfo_toplevel()
+            )
 
     def change_zoom(self, event=None):
 
@@ -122,6 +190,8 @@ class ScrollableImageViewer(tk.Frame):
 
         if self.original_image is None:
             return
+
+        self.canvas.update_idletasks()
 
         scale = self.zoom / 100
 
@@ -137,7 +207,10 @@ class ScrollableImageViewer(tk.Frame):
             (w, h)
         )
 
-        self.photo = ImageTk.PhotoImage(img)
+        self.photo = ImageTk.PhotoImage(
+            img,
+            master=self.canvas
+        )
 
         self.canvas.delete("all")
 
@@ -271,7 +344,8 @@ class ViewCounterFoilNominalRoll:
         )
 
         self.cf_viewer = ScrollableImageViewer(
-            cf_frame
+            cf_frame,
+            show_record_details=True
         )
 
         self.cf_viewer.pack(
@@ -370,33 +444,32 @@ class ViewCounterFoilNominalRoll:
 
                 return
 
-            cf_image = str(row[0]).strip()
-            nr_image = str(row[1]).strip()
+            cf_image = self._database_path(row[0])
+            nr_image = self._database_path(row[1])
+
+            self.cf_viewer.set_record_details(
+                "" if row[3] is None else row[3],
+                "" if row[2] is None else row[2]
+            )
 
             # Counter Foil
 
-            if (
-                cf_image.upper() != "NO FILE"
-                and
-                os.path.exists(cf_image)
-            ):
+            if cf_image and cf_image.upper() != "NO FILE":
                 self.cf_viewer.load_image(
                     cf_image
                 )
             else:
+                self.cf_viewer.original_image = None
                 self.cf_viewer.canvas.delete("all")
 
             # Nominal Roll
 
-            if (
-                nr_image.upper() != "NO FILE"
-                and
-                os.path.exists(nr_image)
-            ):
+            if nr_image and nr_image.upper() != "NO FILE":
                 self.nr_viewer.load_image(
                     nr_image
                 )
             else:
+                self.nr_viewer.original_image = None
                 self.nr_viewer.canvas.delete("all")
 
         except Exception as ex:
@@ -406,10 +479,23 @@ class ViewCounterFoilNominalRoll:
                 str(ex)
             )
 
+    @staticmethod
+    def _database_path(value):
+
+        if value is None:
+            return ""
+
+        if isinstance(value, bytes):
+            value = os.fsdecode(value)
+
+        return os.path.normpath(
+            str(value).strip().strip('"')
+        )
+
 if __name__ == "__main__":
 
     root = tk.Tk()
 
-    app = ViewCounterFoilsNominalRolls(root,user_id=1)
+    app = ViewCounterFoilNominalRoll(root, user_id=1)
 
     root.mainloop()

@@ -296,16 +296,16 @@ def align_grid_perfect(img, tpl, scale_x, scale_y, box, is_bw):
     max_score_x = -1
     best_avg_dist_x = 999999
     
-    # Use a wider search window (±40 px) so that scan-to-scan variation and
-    # small box-detection offsets can always be corrected by snapping.
-    for tx in range(-40, 41):
+    # Use a wider search window (±60 px) so that scan-to-scan variation and
+    # initial box offsets are reliably corrected by snapping onto physical bubble centroids.
+    for tx in range(-60, 61):
         score = 0
         dist_sum = 0
         for i in range(b_conf["cols"]):
             cx_tpl = compute_bubble_col_x(est_grid_x + tx, col_start, col_spacing, i)
             dists = [abs(c[0] - cx_tpl) for c in detected_centroids]
             min_dist = min(dists) if dists else 999
-            if min_dist < 6 * scale_x:
+            if min_dist < 8 * scale_x:
                 score += 1
                 dist_sum += min_dist
         if score > max_score_x or (score == max_score_x and dist_sum < best_avg_dist_x):
@@ -519,23 +519,69 @@ def read_bubbles_custom(img, tpl, scale_x, scale_y, is_bw):
 # DECOUPLED ALIGNMENT & BUBBLE READING (B&W PADDED FILES)
 # ──────────────────────────────────────────────────────────
 def detect_bubbles_centroids(img, scale):
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY_INV)
-    contours, _ = cv2.findContours(thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    """
+    Detects bubble centroids (both filled and unfilled) for grid alignment.
+    Supports both Coloured images (using Red HSV mask + Dark mask) and B&W images (using grayscale line suppression).
+    """
+    h, w = img.shape[:2]
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if len(img.shape) == 3 else img.copy()
     
     detected_centroids = []
-    min_dim = int(8 * scale)
-    max_dim = int(24 * scale)
-    
+    min_dim = int(7 * scale)
+    max_dim = int(32 * scale)
+
+    is_coloured = False
+    if len(img.shape) == 3:
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        avg_sat = np.mean(hsv[:, :, 1])
+        if avg_sat > 15:
+            is_coloured = True
+
+    if is_coloured:
+        # Coloured image: red bubble outlines + dark filled centers
+        lower_red1 = np.array([0, 25, 40]);   upper_red1 = np.array([15, 255, 255])
+        lower_red2 = np.array([165, 25, 40]);  upper_red2 = np.array([180, 255, 255])
+        mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
+        mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
+        red_mask = cv2.bitwise_or(mask1, mask2)
+
+        _, dark_mask = cv2.threshold(gray, 160, 255, cv2.THRESH_BINARY_INV)
+        combined_mask = cv2.bitwise_or(red_mask, dark_mask)
+
+        # Remove long table border lines
+        kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 1))
+        kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 25))
+        h_lines = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel_h)
+        v_lines = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel_v)
+        
+        bubble_binary = cv2.bitwise_and(combined_mask, cv2.bitwise_not(cv2.bitwise_or(h_lines, v_lines)))
+    else:
+        # B&W / Grayscale image
+        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV)
+
+        kernel_h = cv2.getStructuringElement(cv2.MORPH_RECT, (25, 1))
+        kernel_v = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 25))
+        h_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_h)
+        v_lines = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_v)
+        
+        bubble_binary = cv2.bitwise_and(thresh, cv2.bitwise_not(cv2.bitwise_or(h_lines, v_lines)))
+
+    contours, _ = cv2.findContours(bubble_binary, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
     for c in contours:
         x, y, rw, rh = cv2.boundingRect(c)
-        aspect_ratio = rw / float(rh)
-        if 0.7 <= aspect_ratio <= 1.4 and min_dim <= rw <= max_dim and min_dim <= rh <= max_dim:
-            M = cv2.moments(c)
-            if M["m00"] != 0:
-                cx = int(M["m10"] / M["m00"])
-                cy = int(M["m01"] / M["m00"])
-                detected_centroids.append((cx, cy))
+        aspect_ratio = rw / float(rh) if rh > 0 else 0
+        area = cv2.contourArea(c)
+        
+        if 0.65 <= aspect_ratio <= 1.45 and min_dim <= rw <= max_dim and min_dim <= rh <= max_dim:
+            extent = area / float(rw * rh)
+            if extent >= 0.35:
+                M = cv2.moments(c)
+                if M["m00"] != 0:
+                    cx = int(M["m10"] / M["m00"])
+                    cy = int(M["m01"] / M["m00"])
+                    detected_centroids.append((cx, cy))
+
     return detected_centroids
 
 def align_grid_decoupled(img, tpl, scale_x, scale_y, barcode_rect):
@@ -1793,9 +1839,9 @@ class VisualOMRViewerDemo:
         content = tk.Frame(self.root, bg=BG)
         content.pack(fill="both", expand=True,
                      padx=px(5), pady=px(4))
-        content.columnconfigure(0, weight=51)
-        content.columnconfigure(1, weight=38)
-        content.columnconfigure(2, weight=11)
+        content.columnconfigure(0, weight=58)
+        content.columnconfigure(1, weight=35)
+        content.columnconfigure(2, weight=7)
         content.rowconfigure(0, weight=1)
 
         # COL 0 — Original sheet
@@ -1993,6 +2039,13 @@ class VisualOMRViewerDemo:
         if value != digits:
             self.edit_subject.delete(0, tk.END)
             self.edit_subject.insert(0, digits)
+
+    def _format_filename(self, filename: str) -> str:
+        if not filename:
+            return "—"
+        if len(filename) > 60:
+            return f"{filename[:60]}\n{filename[60:]}"
+        return filename
 
     def build_results_panel(self):
         """Populate the scrollable right panel with all result fields."""
@@ -2404,8 +2457,9 @@ class VisualOMRViewerDemo:
             # Update Metadata Label
             type_str = ("B&W Padded" if res["is_padded_bw"]
                         else ("Grayscale" if res["is_bw"] else "Color"))
+            fname = self._format_filename(str(res.get("filename", "")))
             self.meta_lbl.config(
-                text=(f"File: {res['filename']}\n"
+                text=(f"File: {fname}\n"
                       f"Res: {res['resolution']}  |  {type_str}  |  "
                       f"Sat: {res['avg_sat']}  |  IsBlack: {res['isblack']}")
             )
@@ -3229,6 +3283,66 @@ class VisualOMRViewerDemo:
     def _run_on_ui(self, callback, *args, **kwargs):
         self.root.after(0, lambda: callback(*args, **kwargs))
 
+    def _display_processed_result(self, res):
+        """Load a processed result into the visible fields and image panels."""
+        self.current_omr_res = res
+
+        self.edit_barcode.delete(0, tk.END)
+        self.edit_barcode.insert(0, res["barcode"])
+        self.edit_bubble.delete(0, tk.END)
+        self.edit_bubble.insert(0, res["bubble_regno"])
+        self.edit_hw.delete(0, tk.END)
+        self.edit_hw.insert(0, res["handwritten_regno"])
+        self.edit_final.delete(0, tk.END)
+        self.edit_final.insert(0, res["final_regno"])
+        self.edit_subject.delete(0, tk.END)
+        self.edit_subject.insert(0, res["subject_code"])
+        self.edit_booklet.delete(0, tk.END)
+        self.edit_booklet.insert(0, res["booklet_number"])
+
+        self.edit_booklet_threshold.config(state="normal")
+        self.edit_booklet_threshold.delete(0, tk.END)
+        self.edit_booklet_threshold.insert(0, str(res.get("omr_threshold", "")))
+        self.edit_booklet_threshold.config(state="readonly")
+        self.edit_cand_sig.set("YES" if res["cand_signed"] else "NO")
+        self.edit_inv_sig.set("YES" if res["inv_signed"] else "NO")
+
+        type_str = ("B&W Padded" if res["is_padded_bw"]
+                    else ("Grayscale" if res["is_bw"] else "Color"))
+        fname = self._format_filename(str(res.get("filename", "")))
+        self.meta_lbl.config(
+            text=(f"File: {fname}\n"
+                  f"Res: {res['resolution']}  |  {type_str}  |  "
+                  f"Sat: {res['avg_sat']}  |  IsBlack: {res['isblack']}"))
+
+        final_regno, has_disc, disc_detail = determine_final_regno(
+            res["bubble_regno"], res["handwritten_regno"])
+        if has_disc:
+            self.disc_frame.config(bg="#c62828")
+            self.disc_lbl.config(
+                text=f"DISCREPANCY: MISMATCH\n{disc_detail}", bg="#c62828")
+        else:
+            self.disc_frame.config(bg="#2e7d32")
+            self.disc_lbl.config(
+                text=f"DISCREPANCY STATUS: MATCHED\n{disc_detail}", bg="#2e7d32")
+
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        self._full_omr_cv_img = res["full_annotated_img"]
+        self._refresh_full_omr_image()
+        self.display_image_in_label(res["subject_crop"], self.subject_crop_lbl,
+            max_size=(int(sw * 0.16), int(sh * 0.12)))
+        self.display_image_in_label(res["booklet_crop"], self.booklet_crop_lbl,
+            max_size=(int(sw * 0.16), int(sh * 0.12)))
+        self.display_image_in_label(res["debug_grid_img"], self.grid_canvas_lbl,
+            max_size=(int(sw * 0.34), int(sh * 0.34)))
+        self.display_image_in_label(res["reg_box_crop"], self.hw_crop_lbl,
+            max_size=(int(sw * 0.34), int(sh * 0.08)))
+        self.display_image_in_label(res["cand_sig_crop"], self.cand_sig_lbl,
+            max_size=(int(sw * 0.16), int(sh * 0.14)))
+        self.display_image_in_label(res["inv_sig_crop"], self.inv_sig_lbl,
+            max_size=(int(sw * 0.16), int(sh * 0.14)))
+
     def process_all_sheets_to_mssql(self):
         if not self.omr_dir or not os.path.exists(self.omr_dir):
             messagebox.showerror("Error", "Invalid folder path!")
@@ -3297,6 +3411,7 @@ class VisualOMRViewerDemo:
                         extracted = self._extracted_status_from_result(res)
                         self.omr_csv_records[rel_key] = self.build_export_row_from_result(res)
                         processed += 1
+                        self._run_on_ui(self._display_processed_result, res)
 
                         cursor.execute(
                             f"SELECT COUNT(*) FROM {table_name} WHERE filename = ?",
@@ -3304,6 +3419,7 @@ class VisualOMRViewerDemo:
                         )
                         if cursor.fetchone()[0] == 0:
                             self.insert_omr_result_row(conn, cursor, table_name, res)
+                            conn.commit()
 
                         self._run_on_ui(
                             self._update_counterfoil_bulk_progress,

@@ -3,3 +3,4 @@ python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 python -m compileall .
 python -m PyInstaller --noconfirm --clean KPSC_OMR_Suite.spec
+python -m PyInstaller E:\venkat\Antigravity\Phase2\kpsc_omr\KPSC_OMR_Suite.spec --noconfirm --clean
